@@ -9,7 +9,10 @@ from __future__ import annotations
 import typer
 
 from lottie.cli.create import create_app
+from lottie.cli.doctor import doctor
 from lottie.cli.init import init
+from lottie.cli.run import run
+from lottie.cli.status import status
 
 app = typer.Typer(
     help="Lottie AI Orchestrator",
@@ -27,3 +30,6 @@ def _main() -> None:
 
 app.command("init")(init)
 app.add_typer(create_app, name="create")
+app.command("run")(run)
+app.command("status")(status)
+app.command("doctor")(doctor)

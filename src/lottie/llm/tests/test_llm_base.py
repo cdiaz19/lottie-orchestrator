@@ -55,3 +55,11 @@ def test_concrete_provider_returns_response() -> None:
     resp = provider.complete([Message(role="user", content="ping")])
     assert resp.content == "ping"
     assert resp.model == "echo-1"
+
+
+def test_build_provider_returns_litellm_provider() -> None:
+    from lottie.llm import LiteLLMProvider, build_provider
+
+    provider = build_provider("anthropic/claude-sonnet-4-6")
+    assert isinstance(provider, LiteLLMProvider)
+    assert provider.model == "anthropic/claude-sonnet-4-6"
