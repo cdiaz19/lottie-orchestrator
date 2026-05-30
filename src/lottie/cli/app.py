@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import typer
 
+from lottie.cli.create import create_app
 from lottie.cli.init import init
 
 app = typer.Typer(
@@ -25,3 +26,4 @@ def _main() -> None:
 
 
 app.command("init")(init)
+app.add_typer(create_app, name="create")

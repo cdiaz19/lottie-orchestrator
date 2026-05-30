@@ -929,6 +929,7 @@ name = "lottie-orchestrator"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "jinja2" },
     { name = "langchain-core" },
     { name = "litellm" },
     { name = "pydantic" },
@@ -947,6 +948,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "jinja2", specifier = ">=3.1.6" },
     { name = "langchain-core", specifier = ">=1.4.0" },
     { name = "litellm", specifier = ">=1.86.2" },
     { name = "pydantic", specifier = ">=2.13.4" },
