@@ -1,17 +1,13 @@
 """Typed input/output models for {{ class_name }}."""
-
 from __future__ import annotations
-
 from pydantic import BaseModel
 
 
-class Input(BaseModel):
+class {{ class_name }}Input(BaseModel):
     """Input for {{ class_name }}."""
-
     text: str
 
 
-class Output(BaseModel):
+class {{ class_name }}Output(BaseModel):
     """Output from {{ class_name }}."""
-
     result: str

@@ -1,26 +1,25 @@
 """Unit tests for {{ class_name }} (deterministic — no LLM)."""
-
 from __future__ import annotations
-
 import pytest
 from pydantic import ValidationError
-
-from skills.{{ name }}.schema import Input
+from skills.{{ name }}.schema import {{ class_name }}Input, {{ class_name }}Output
 from skills.{{ name }}.skill import {{ class_name }}
 
 
 def test_{{ name }}_happy_path() -> None:
     skill = {{ class_name }}()
-    result = skill.run(Input(text="hello"))
+    result = skill.run({{ class_name }}Input(text="hello"))
+    assert isinstance(result, {{ class_name }}Output)
     assert result.result == "hello"
 
 
 def test_{{ name }}_handles_empty_text() -> None:
     skill = {{ class_name }}()
-    result = skill.run(Input(text=""))
+    result = skill.run({{ class_name }}Input(text=""))
+    assert isinstance(result, {{ class_name }}Output)
     assert result.result == ""
 
 
 def test_{{ name }}_rejects_wrong_type() -> None:
     with pytest.raises(ValidationError):
-        Input(text=123)  # type: ignore[arg-type]
+        {{ class_name }}Input(text=123)  # type: ignore[arg-type]
