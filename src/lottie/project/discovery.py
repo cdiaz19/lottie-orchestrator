@@ -115,14 +115,36 @@ def load_agent_class(root: Path, name: str) -> type[BaseAgent[BaseModel, BaseMod
 
 
 def load_input_model(root: Path, name: str) -> type[BaseModel]:
-    """Import agents/<name>/schema.py and return its `Input` model."""
+    """Import agents/<name>/schema.py and return its Input model.
+
+    Accepts the legacy ``Input`` name or the prefixed ``<ClassName>Input``
+    convention produced by the scaffold templates.
+    """
     module = _import_unit_module(root, f"agents.{name}.schema", name)
+
+    # Legacy convention: class Input(BaseModel)
     candidate = getattr(module, "Input", None)
-    if not (isinstance(candidate, type) and issubclass(candidate, BaseModel)):
-        raise typer.BadParameter(
-            f"agents/{name}/schema.py must define an `Input(BaseModel)` class"
-        )
-    return candidate
+    if isinstance(candidate, type) and issubclass(candidate, BaseModel):
+        return candidate
+
+    # Prefixed convention: class <ClassName>Input(BaseModel)
+    candidates = [
+        attr
+        for attr in vars(module).values()
+        if isinstance(attr, type)
+        and issubclass(attr, BaseModel)
+        and attr is not BaseModel
+        and attr.__name__.endswith("Input")
+        and attr.__module__ == module.__name__
+    ]
+    if len(candidates) == 1:
+        return candidates[0]
+
+    raise typer.BadParameter(
+        f"agents/{name}/schema.py must define an `Input(BaseModel)` class"
+        f" or exactly one `<Name>Input(BaseModel)` class"
+        f" — found {len(candidates)}"
+    )
 
 
 def required_fields(model: type[BaseModel]) -> list[str]:
