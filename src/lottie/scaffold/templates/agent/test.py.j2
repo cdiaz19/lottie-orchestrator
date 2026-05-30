@@ -1,27 +1,26 @@
 """Integration tests for {{ class_name }} (MockLLMProvider — no real LLM)."""
-
 from __future__ import annotations
-
 from lottie.llm import MockLLMProvider
-
 from agents.{{ name }}.agent import {{ class_name }}
-from agents.{{ name }}.schema import Input
+from agents.{{ name }}.schema import {{ class_name }}Input, {{ class_name }}Output
 
 
 def test_{{ name }}_returns_llm_content() -> None:
     agent = {{ class_name }}(llm=MockLLMProvider(["hello from mock"]))
-    result = agent.run(Input(query="hi"))
+    result = agent.run({{ class_name }}Input(query="hi"))
+    assert isinstance(result, {{ class_name }}Output)
     assert result.result == "hello from mock"
 
 
 def test_{{ name }}_makes_one_llm_call() -> None:
     mock = MockLLMProvider(["ok"])
     agent = {{ class_name }}(llm=mock)
-    agent.run(Input(query="hi"))
+    agent.run({{ class_name }}Input(query="hi"))
     assert len(mock.calls) == 1
 
 
 def test_{{ name }}_handles_empty_query() -> None:
     agent = {{ class_name }}(llm=MockLLMProvider(["fallback"]))
-    result = agent.run(Input(query=""))
+    result = agent.run({{ class_name }}Input(query=""))
+    assert isinstance(result, {{ class_name }}Output)
     assert result.result == "fallback"
