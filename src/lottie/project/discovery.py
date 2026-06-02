@@ -117,7 +117,10 @@ def load_agent_class(root: Path, name: str) -> type[BaseAgent[BaseModel, BaseMod
 
 
 def _find_model(
-    module: ModuleType, suffix: Literal["Input", "Output"], name: str
+    module: ModuleType,
+    suffix: Literal["Input", "Output"],
+    kind: Literal["agent", "skill"],
+    name: str,
 ) -> type[BaseModel]:
     """Return the BaseModel subclass for `suffix` defined in `module`.
 
@@ -139,7 +142,7 @@ def _find_model(
     if len(candidates) == 1:
         return candidates[0]
     raise typer.BadParameter(
-        f"{name}/schema.py must define an `{suffix}(BaseModel)` class"
+        f"{kind}s/{name}/schema.py must define an `{suffix}(BaseModel)` class"
         f" or exactly one `<Name>{suffix}(BaseModel)` class"
         f" — found {len(candidates)}"
     )
@@ -150,7 +153,7 @@ def load_schema_models(
 ) -> tuple[type[BaseModel], type[BaseModel]]:
     """Import {kind}s/<name>/schema.py and return its (Input, Output) models."""
     module = _import_unit_module(root, f"{kind}s.{name}.schema", name, kind)
-    return _find_model(module, "Input", name), _find_model(module, "Output", name)
+    return _find_model(module, "Input", kind, name), _find_model(module, "Output", kind, name)
 
 
 def load_input_model(root: Path, name: str) -> type[BaseModel]:
@@ -159,15 +162,15 @@ def load_input_model(root: Path, name: str) -> type[BaseModel]:
 
 
 def load_system_prompt(root: Path, name: str) -> str | None:
-    """Return SYSTEM_PROMPT from agents/<name>/prompts.py, or None if absent.
+    """Return SYSTEM_PROMPT from agents/<name>/prompts.py.
 
-    A missing prompts.py (or missing/ non-str SYSTEM_PROMPT) yields None so
-    `inspect` can render `—` rather than fail.
+    Returns None only when prompts.py is absent, or when SYSTEM_PROMPT is
+    missing / not a str, so `inspect` can render `—`. A prompts.py that exists
+    but fails to import propagates the error rather than being masked.
     """
-    try:
-        module = _import_unit_module(root, f"agents.{name}.prompts", name)
-    except typer.BadParameter:
+    if not (root / "agents" / name / "prompts.py").is_file():
         return None
+    module = _import_unit_module(root, f"agents.{name}.prompts", name)
     prompt = getattr(module, "SYSTEM_PROMPT", None)
     return prompt if isinstance(prompt, str) else None
 

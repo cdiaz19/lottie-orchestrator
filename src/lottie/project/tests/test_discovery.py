@@ -126,3 +126,14 @@ def test_load_system_prompt_absent(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     demo = _scaffold(tmp_path, monkeypatch)
     (demo / "agents" / "researcher" / "prompts.py").unlink()
     assert load_system_prompt(demo, "researcher") is None
+
+
+def test_load_system_prompt_broken_propagates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    demo = _scaffold(tmp_path, monkeypatch)
+    (demo / "agents" / "researcher" / "prompts.py").write_text(
+        "import nonexistent_module_xyz\n", encoding="utf-8"
+    )
+    with pytest.raises(typer.BadParameter):
+        load_system_prompt(demo, "researcher")
