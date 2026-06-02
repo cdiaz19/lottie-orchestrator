@@ -13,6 +13,8 @@ from lottie.project.discovery import (
     discover_skills,
     load_agent_class,
     load_input_model,
+    load_schema_models,
+    load_system_prompt,
     required_fields,
 )
 
@@ -89,3 +91,38 @@ def test_load_input_model_missing_input(
 
     with pytest.raises(typer.BadParameter):
         load_input_model(demo, "researcher")
+
+
+def test_load_schema_models_agent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    demo = _scaffold(tmp_path, monkeypatch)
+    in_model, out_model = load_schema_models(demo, "agent", "researcher")
+    assert in_model.__name__ == "ResearcherAgentInput"
+    assert out_model.__name__ == "ResearcherAgentOutput"
+    assert "query" in in_model.model_fields
+
+
+def test_load_schema_models_skill(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    demo = _scaffold(tmp_path, monkeypatch)
+    in_model, out_model = load_schema_models(demo, "skill", "cleaner")
+    assert in_model.__name__ == "CleanerSkillInput"
+    assert out_model.__name__ == "CleanerSkillOutput"
+    assert "text" in in_model.model_fields
+
+
+def test_load_schema_models_unknown(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    demo = _scaffold(tmp_path, monkeypatch)
+    with pytest.raises(typer.BadParameter):
+        load_schema_models(demo, "skill", "nope")
+
+
+def test_load_system_prompt_present(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    demo = _scaffold(tmp_path, monkeypatch)
+    prompt = load_system_prompt(demo, "researcher")
+    assert prompt is not None
+    assert "ResearcherAgent" in prompt
+
+
+def test_load_system_prompt_absent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    demo = _scaffold(tmp_path, monkeypatch)
+    (demo / "agents" / "researcher" / "prompts.py").unlink()
+    assert load_system_prompt(demo, "researcher") is None
