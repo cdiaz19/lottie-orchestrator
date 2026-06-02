@@ -1,3 +1,4 @@
+from lottie.benchmark.runner import benchmark, load_suite, run_suite
 from lottie.benchmark.schema import (
     BenchmarkReport,
     CaseResult,
@@ -14,4 +15,7 @@ __all__ = [
     "EvalExpect",
     "EvalSuite",
     "ProviderReport",
+    "benchmark",
+    "load_suite",
+    "run_suite",
 ]
