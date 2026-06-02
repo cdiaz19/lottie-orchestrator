@@ -218,8 +218,15 @@ import `schema`/`base`/`mock` before `agent`.
 
 `MemoryTier`, `MemoryRecord`, `MemoryQuery`, `MemoryHit`, `RecallResult`,
 `ReflectionInput`, `ReflectionResult`, `MemoryClient`, `NullMemoryClient`,
-`MockMemoryClient`, `MemoryStoreError`, `MemoryNotConfiguredError`,
-`MemoryAgent`, `MockMemoryAgent`.
+`MockMemoryClient`, `MemoryStoreError`, `MemoryNotConfiguredError`.
+
+`MemoryAgent` / `MockMemoryAgent` are **not** re-exported from the package
+`__init__` — import them from `lottie.memory.agent` directly. Reason: `BaseAgent`
+imports `lottie.memory.base`, which forces `lottie.memory/__init__` to run; if
+that init imported `agent.py` (which depends on `lottie.core`), `import
+lottie.core` would hit a partially-initialized-module cycle. Keeping the agent
+classes out of the package init breaks the cycle (mirrors how `base_agent`
+imports the `base` submodule rather than the package).
 
 ## Testing (TDD, no real LLM)
 
