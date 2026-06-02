@@ -13,6 +13,10 @@ from lottie.benchmark.runner import benchmark
 from lottie.benchmark.schema import ProviderReport
 from lottie.project.config import find_project_root, load_agent_config, load_lottie_config
 
+# Wide fixed width so long provider names (e.g. "anthropic/claude-sonnet-4-6")
+# aren't truncated by Rich in headless/CI terminals (default width 80 truncates).
+_REPORT_WIDTH = 200
+
 benchmark_app = typer.Typer(
     help="Benchmark agents against eval suites.", no_args_is_help=True
 )
@@ -84,4 +88,4 @@ def _print_table(reports: list[ProviderReport]) -> None:
             f"{r.mean_cost_usd:.4f}",
             f"{r.total_input_tokens}/{r.total_output_tokens}",
         )
-    Console(width=200).print(table)
+    Console(width=_REPORT_WIDTH).print(table)
