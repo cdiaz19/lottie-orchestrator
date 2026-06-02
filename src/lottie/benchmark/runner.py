@@ -99,6 +99,8 @@ def _aggregate(provider: str, results: list[CaseResult]) -> ProviderReport:
     n = len(results)
     passed = sum(1 for r in results if r.passed)
     succeeded = [r for r in results if r.success]
+    # Latency/cost only over succeeded runs (failed cases have no real timing);
+    # token totals (below) over all results — failed cases contribute 0, so the sum stays honest.
     latencies = [r.latency_ms for r in succeeded]
     costs = [r.cost_usd for r in succeeded]
     return ProviderReport(
