@@ -86,6 +86,12 @@ lottie create agent <name>             # scaffold agent (all required files)
 lottie create skill <name>             # scaffold skill (all required files)
 lottie create agent <name> --from-desc "..."  # AI-powered generator
 
+# Registry
+lottie list agents                     # list agents with provider
+lottie list skills                     # list skills with input/output types
+lottie inspect agent <name>            # config, schema, system prompt
+lottie inspect skill <name>            # schema, SKILL.md presence
+
 # Running
 lottie run <agent>                     # run an agent
 lottie run <agent> --provider openai   # override provider for this run
