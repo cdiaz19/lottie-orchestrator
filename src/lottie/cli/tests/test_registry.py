@@ -62,3 +62,35 @@ def test_list_skills_broken_schema_degrades(
 def test_list_outside_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     assert runner.invoke(app, ["list", "agents"]).exit_code != 0
+
+
+def test_inspect_agent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _scaffold(tmp_path, monkeypatch)
+    result = runner.invoke(app, ["inspect", "agent", "researcher"])
+    assert result.exit_code == 0, result.output
+    assert "anthropic" in result.output      # provider from config.yaml
+    assert "query" in result.output          # Input field
+    assert "ResearcherAgent" in result.output  # from SYSTEM_PROMPT
+
+
+def test_inspect_skill(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _scaffold(tmp_path, monkeypatch)
+    result = runner.invoke(app, ["inspect", "skill", "cleaner"])
+    assert result.exit_code == 0, result.output
+    assert "text" in result.output           # Input field
+    assert "result" in result.output         # Output field
+
+
+def test_inspect_agent_unknown(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _scaffold(tmp_path, monkeypatch)
+    assert runner.invoke(app, ["inspect", "agent", "nope"]).exit_code != 0
+
+
+def test_inspect_skill_unknown(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _scaffold(tmp_path, monkeypatch)
+    assert runner.invoke(app, ["inspect", "skill", "nope"]).exit_code != 0
+
+
+def test_inspect_outside_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["inspect", "agent", "researcher"]).exit_code != 0
