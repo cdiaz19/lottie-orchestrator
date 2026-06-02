@@ -100,3 +100,23 @@ def test_load_suite_missing_file(tmp_path: Path) -> None:
     (tmp_path / "agents" / "echo").mkdir(parents=True)
     with pytest.raises(typer.BadParameter):
         load_suite(tmp_path, "echo")
+
+
+def test_run_suite_empty_suite_zeros() -> None:
+    agent = _EchoAgent(MockLLMProvider(["unused"]), enable_benchmarks=False)
+    report = run_suite(agent, EvalSuite(cases=[]), _In)
+    assert report.case_count == 0
+    assert report.accuracy == 0.0
+    assert report.success_rate == 0.0
+    assert report.latency_p50_ms == 0.0
+    assert report.mean_cost_usd == 0.0
+    assert report.cases == []
+
+
+def test_load_suite_invalid_yaml(tmp_path: Path) -> None:
+    agent_dir = tmp_path / "agents" / "echo"
+    agent_dir.mkdir(parents=True)
+    # `cases` must be a list; a string fails EvalSuite validation.
+    (agent_dir / "evals.yaml").write_text("cases: not-a-list\n", encoding="utf-8")
+    with pytest.raises(typer.BadParameter):
+        load_suite(tmp_path, "echo")

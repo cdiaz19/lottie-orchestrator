@@ -81,3 +81,14 @@ def test_benchmark_unknown_agent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     result = runner.invoke(app, ["benchmark", "agent", "nope"])
     assert result.exit_code != 0
     assert "nope" in result.output
+
+
+def test_benchmark_single_provider(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    demo = _scaffold_with_evals(tmp_path, monkeypatch)
+    monkeypatch.setattr("litellm.completion", _fake_completion)
+
+    result = runner.invoke(app, ["benchmark", "agent", "echo", "--provider", "openai/gpt-4o"])
+    assert result.exit_code == 0, result.output
+    data = json.loads((demo / ".lottie" / "benchmarks" / "echo-report.json").read_text())
+    assert len(data["providers"]) == 1
+    assert data["providers"][0]["provider"] == "openai/gpt-4o"
