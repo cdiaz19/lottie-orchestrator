@@ -96,8 +96,8 @@ insertion order in the mock; a real `created_at` arrives with the SQLite store.
 ## `MemoryClient` ABC + `NullMemoryClient` (`base.py`)
 
 ```python
-class MemoryError(Exception): ...
-class MemoryNotConfiguredError(MemoryError): ...
+class MemoryStoreError(Exception): ...   # not "MemoryError" — that shadows a builtin
+class MemoryNotConfiguredError(MemoryStoreError): ...
 
 
 class MemoryClient(ABC):
@@ -218,8 +218,8 @@ import `schema`/`base`/`mock` before `agent`.
 
 `MemoryTier`, `MemoryRecord`, `MemoryQuery`, `MemoryHit`, `RecallResult`,
 `ReflectionInput`, `ReflectionResult`, `MemoryClient`, `NullMemoryClient`,
-`MockMemoryClient`, `MemoryError`, `MemoryNotConfiguredError`, `MemoryAgent`,
-`MockMemoryAgent`.
+`MockMemoryClient`, `MemoryStoreError`, `MemoryNotConfiguredError`,
+`MemoryAgent`, `MockMemoryAgent`.
 
 ## Testing (TDD, no real LLM)
 
