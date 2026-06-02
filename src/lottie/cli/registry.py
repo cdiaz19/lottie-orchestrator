@@ -65,7 +65,7 @@ def _field_lines(model: type[BaseModel]) -> str:
     lines: list[str] = []
     for fname, field in model.model_fields.items():
         ann = field.annotation
-        type_name: str = getattr(ann, "__name__", None) or str(ann)
+        type_name = ann.__name__ if isinstance(ann, type) else str(ann)
         lines.append(f"  {fname}: {type_name}")
     return "\n".join(lines) or "  (no fields)"
 

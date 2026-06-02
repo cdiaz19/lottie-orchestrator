@@ -83,12 +83,16 @@ def test_inspect_skill(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_inspect_agent_unknown(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _scaffold(tmp_path, monkeypatch)
-    assert runner.invoke(app, ["inspect", "agent", "nope"]).exit_code != 0
+    result = runner.invoke(app, ["inspect", "agent", "nope"])
+    assert result.exit_code != 0
+    assert "not found" in result.output
 
 
 def test_inspect_skill_unknown(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _scaffold(tmp_path, monkeypatch)
-    assert runner.invoke(app, ["inspect", "skill", "nope"]).exit_code != 0
+    result = runner.invoke(app, ["inspect", "skill", "nope"])
+    assert result.exit_code != 0
+    assert "not found" in result.output
 
 
 def test_inspect_outside_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
