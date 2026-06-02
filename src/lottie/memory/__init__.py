@@ -1,7 +1,7 @@
 from lottie.memory.base import (
     MemoryClient,
-    MemoryError,
     MemoryNotConfiguredError,
+    MemoryStoreError,
     NullMemoryClient,
 )
 from lottie.memory.mock import MockMemoryClient
@@ -17,11 +17,11 @@ from lottie.memory.schema import (
 
 __all__ = [
     "MemoryClient",
-    "MemoryError",
     "MemoryHit",
     "MemoryNotConfiguredError",
     "MemoryQuery",
     "MemoryRecord",
+    "MemoryStoreError",
     "MemoryTier",
     "MockMemoryClient",
     "NullMemoryClient",

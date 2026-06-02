@@ -39,7 +39,7 @@ class MockMemoryClient(MemoryClient):
                 continue
             if text and text not in record.content.lower():
                 continue
-            hits.append(MemoryHit(record=record, score=1.0))
+            hits.append(MemoryHit(record=record, score=1.0))  # mock: no ranking
         return RecallResult(hits=hits[: query.limit])
 
     def forget(self, memory_id: str) -> bool:

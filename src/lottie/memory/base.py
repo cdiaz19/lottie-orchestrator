@@ -13,11 +13,11 @@ from abc import ABC, abstractmethod
 from lottie.memory.schema import MemoryQuery, MemoryRecord, RecallResult
 
 
-class MemoryError(Exception):
+class MemoryStoreError(Exception):
     """Base class for memory subsystem errors."""
 
 
-class MemoryNotConfiguredError(MemoryError):
+class MemoryNotConfiguredError(MemoryStoreError):
     """Raised when an agent uses memory without a configured client."""
 
 
