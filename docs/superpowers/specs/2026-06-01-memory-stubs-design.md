@@ -45,7 +45,7 @@ ABC + `NullMemoryClient` default + `MockMemoryClient` in-memory double, a
 ## Schemas (`schema.py`)
 
 ```python
-class MemoryTier(str, Enum):
+class MemoryTier(StrEnum):     # StrEnum (not str, Enum) — ruff UP042; free str-equality
     WORKING = "working"        # T0 — in-context
     EPISODIC = "episodic"      # T1 — append-only log
     SEMANTIC = "semantic"      # T2 — consolidated knowledge
