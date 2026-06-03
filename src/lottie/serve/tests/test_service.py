@@ -166,3 +166,19 @@ def test_run_agent_provider_override(
     svc.run_agent("echo", {"query": "hi"})  # falls back to config provider
     assert captured[0] is not None
     assert "anthropic" in captured[0]
+
+
+def test_public_exports() -> None:
+    import lottie.serve as serve
+
+    for symbol in (
+        "AgentInfo",
+        "RunResult",
+        "SecurityGate",
+        "AgentService",
+        "ServeError",
+        "AgentNotFoundError",
+        "InvalidInputError",
+        "AgentExecutionError",
+    ):
+        assert hasattr(serve, symbol), symbol
