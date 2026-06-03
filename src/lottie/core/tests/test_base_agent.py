@@ -1,9 +1,13 @@
 from collections.abc import Mapping
 
+import pytest
 from pydantic import BaseModel
 
 from lottie.core import BaseAgent
 from lottie.llm import LLMProvider, LLMResponse, Message, TokenUsage
+from lottie.memory import MemoryNotConfiguredError, MockMemoryClient
+from lottie.memory.base import NullMemoryClient
+from lottie.memory.schema import MemoryQuery, MemoryRecord
 
 
 class _In(BaseModel):
@@ -50,6 +54,11 @@ class TwoCallAgent(BaseAgent[_In, _Out]):
         return _Out(text=resp.content)
 
 
+class _MemAgent(BaseAgent[_In, _Out]):
+    def _execute(self, data: _In) -> _Out:
+        return _Out(text=str(data.x))
+
+
 def test_agent_returns_output() -> None:
     agent = EchoAgent(FakeProvider(), enable_benchmarks=False)
     assert agent.run(_In(x=1)).text == "ok"
@@ -90,3 +99,18 @@ def test_complete_outside_run_returns_response() -> None:
     agent = EchoAgent(FakeProvider(), enable_benchmarks=False)
     resp = agent.complete([Message(role="user", content="hi")])
     assert resp.content == "ok"
+
+
+def test_base_agent_default_memory_is_null() -> None:
+    agent = _MemAgent(FakeProvider())
+    assert isinstance(agent.memory, NullMemoryClient)
+    with pytest.raises(MemoryNotConfiguredError):
+        agent.memory.recall(MemoryQuery(text="", namespace="demo"))
+
+
+def test_base_agent_uses_injected_memory() -> None:
+    client = MockMemoryClient()
+    agent = _MemAgent(FakeProvider(), memory=client)
+    assert agent.memory is client
+    agent.memory.remember(MemoryRecord(content="hi", namespace="demo"))
+    assert client.records[0].content == "hi"

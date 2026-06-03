@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from lottie.core.metrics import Kind
 from lottie.core.runnable import InstrumentedRunnable
 from lottie.llm import LLMProvider, LLMResponse, Message
+from lottie.memory.base import MemoryClient, NullMemoryClient
 
 
 class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[InputT, OutputT]):
@@ -29,6 +30,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         llm: LLMProvider,
         *,
         name: str | None = None,
+        memory: MemoryClient | None = None,
         enable_benchmarks: bool | None = None,
         benchmarks_root: Path | None = None,
     ) -> None:
@@ -38,6 +40,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
             benchmarks_root=benchmarks_root,
         )
         self.llm = llm
+        self.memory: MemoryClient = memory or NullMemoryClient()
 
     @property
     def provider(self) -> str | None:
