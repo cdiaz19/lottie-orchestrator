@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import typer
 
+from lottie.cli.benchmark import benchmark_app
 from lottie.cli.create import create_app
 from lottie.cli.doctor import doctor
 from lottie.cli.init import init
@@ -30,6 +31,7 @@ def _main() -> None:
 
 
 app.command("init")(init)
+app.add_typer(benchmark_app, name="benchmark")
 app.add_typer(create_app, name="create")
 app.add_typer(list_app, name="list")
 app.add_typer(inspect_app, name="inspect")
