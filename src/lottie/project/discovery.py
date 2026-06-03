@@ -60,7 +60,9 @@ def _provider_of(unit_dir: Path) -> str | None:
 _loaded_roots: dict[str, str] = {}
 
 
-def _import_unit_module(root: Path, dotted: str, name: str) -> ModuleType:
+def _import_unit_module(
+    root: Path, dotted: str, name: str, kind: str = "agent"
+) -> ModuleType:
     """Import a dotted module from a project root.
 
     The first import of a top-level package (`agents`/`skills`) from a given root
@@ -86,9 +88,9 @@ def _import_unit_module(root: Path, dotted: str, name: str) -> ModuleType:
     try:
         return importlib.import_module(dotted)
     except ModuleNotFoundError as exc:
-        raise typer.BadParameter(f"agent '{name}' not found") from exc
+        raise typer.BadParameter(f"{kind} '{name}' not found") from exc
     except ImportError as exc:
-        raise typer.BadParameter(f"agent '{name}' failed to import: {exc}") from exc
+        raise typer.BadParameter(f"{kind} '{name}' failed to import: {exc}") from exc
 
 
 def load_agent_class(root: Path, name: str) -> type[BaseAgent[BaseModel, BaseModel]]:
@@ -114,37 +116,63 @@ def load_agent_class(root: Path, name: str) -> type[BaseAgent[BaseModel, BaseMod
     return classes[0]
 
 
-def load_input_model(root: Path, name: str) -> type[BaseModel]:
-    """Import agents/<name>/schema.py and return its Input model.
+def _find_model(
+    module: ModuleType,
+    suffix: Literal["Input", "Output"],
+    kind: Literal["agent", "skill"],
+    name: str,
+) -> type[BaseModel]:
+    """Return the BaseModel subclass for `suffix` defined in `module`.
 
-    Accepts the legacy ``Input`` name or the prefixed ``<ClassName>Input``
-    convention produced by the scaffold templates.
+    Accepts the legacy bare name (`Input`/`Output`) or the prefixed
+    `<ClassName><suffix>` convention produced by the scaffold templates.
     """
-    module = _import_unit_module(root, f"agents.{name}.schema", name)
-
-    # Legacy convention: class Input(BaseModel)
-    candidate = getattr(module, "Input", None)
+    candidate = getattr(module, suffix, None)
     if isinstance(candidate, type) and issubclass(candidate, BaseModel):
         return candidate
-
-    # Prefixed convention: class <ClassName>Input(BaseModel)
     candidates = [
         attr
         for attr in vars(module).values()
         if isinstance(attr, type)
         and issubclass(attr, BaseModel)
         and attr is not BaseModel
-        and attr.__name__.endswith("Input")
+        and attr.__name__.endswith(suffix)
         and attr.__module__ == module.__name__
     ]
     if len(candidates) == 1:
         return candidates[0]
-
     raise typer.BadParameter(
-        f"agents/{name}/schema.py must define an `Input(BaseModel)` class"
-        f" or exactly one `<Name>Input(BaseModel)` class"
+        f"{kind}s/{name}/schema.py must define an `{suffix}(BaseModel)` class"
+        f" or exactly one `<Name>{suffix}(BaseModel)` class"
         f" — found {len(candidates)}"
     )
+
+
+def load_schema_models(
+    root: Path, kind: Literal["agent", "skill"], name: str
+) -> tuple[type[BaseModel], type[BaseModel]]:
+    """Import {kind}s/<name>/schema.py and return its (Input, Output) models."""
+    module = _import_unit_module(root, f"{kind}s.{name}.schema", name, kind)
+    return _find_model(module, "Input", kind, name), _find_model(module, "Output", kind, name)
+
+
+def load_input_model(root: Path, name: str) -> type[BaseModel]:
+    """Import agents/<name>/schema.py and return its Input model (used by `run`)."""
+    return load_schema_models(root, "agent", name)[0]
+
+
+def load_system_prompt(root: Path, name: str) -> str | None:
+    """Return SYSTEM_PROMPT from agents/<name>/prompts.py.
+
+    Returns None only when prompts.py is absent, or when SYSTEM_PROMPT is
+    missing / not a str, so `inspect` can render `—`. A prompts.py that exists
+    but fails to import propagates the error rather than being masked.
+    """
+    if not (root / "agents" / name / "prompts.py").is_file():
+        return None
+    module = _import_unit_module(root, f"agents.{name}.prompts", name)
+    prompt = getattr(module, "SYSTEM_PROMPT", None)
+    return prompt if isinstance(prompt, str) else None
 
 
 def required_fields(model: type[BaseModel]) -> list[str]:
