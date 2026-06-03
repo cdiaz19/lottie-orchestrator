@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from pathlib import Path
 
-from lottie.project.discovery import discover_agents
-from lottie.serve.schema import AgentInfo
+from pydantic import ValidationError
+
+from lottie.llm import build_provider
+from lottie.project.config import load_agent_config
+from lottie.project.discovery import (
+    discover_agents,
+    load_agent_class,
+    load_input_model,
+)
+from lottie.serve.schema import AgentInfo, RunResult
 from lottie.serve.security import SecurityGate
 
 
@@ -38,3 +48,44 @@ class AgentService:
             AgentInfo(name=unit.name, provider=unit.provider)
             for unit in discover_agents(self._root)
         ]
+
+    def run_agent(
+        self,
+        name: str,
+        payload: Mapping[str, object],
+        *,
+        provider: str | None = None,
+    ) -> RunResult:
+        """Run one agent: gate input, validate, run, gate output, return metrics."""
+        unit_dir = self._root / "agents" / name
+        if not (unit_dir / "agent.py").is_file():
+            raise AgentNotFoundError(f"agent '{name}' not found")
+
+        self._gate.check_input(json.dumps(payload))
+
+        cfg = load_agent_config(unit_dir)
+        llm = build_provider(provider or cfg.provider)
+
+        input_model = load_input_model(self._root, name)
+        try:
+            data = input_model.model_validate(payload)
+        except ValidationError as exc:
+            raise InvalidInputError(f"invalid input for '{name}': {exc}") from exc
+
+        agent = load_agent_class(self._root, name)(llm=llm)
+        try:
+            output = agent.run(data)
+        except Exception as exc:  # noqa: BLE001 — any agent failure → one typed error
+            raise AgentExecutionError(f"agent '{name}' failed: {exc}") from exc
+
+        self._gate.check_output(output.model_dump_json())
+
+        m = agent.last_metrics
+        return RunResult(
+            agent=name,
+            output=output.model_dump(),
+            latency_ms=m.latency_ms if m else 0.0,
+            input_tokens=m.input_tokens if m else 0,
+            output_tokens=m.output_tokens if m else 0,
+            cost_usd=m.cost_usd if m else 0.0,
+        )
