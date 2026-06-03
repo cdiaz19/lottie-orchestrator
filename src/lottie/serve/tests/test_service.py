@@ -11,6 +11,7 @@ from lottie.llm.base import LLMProvider
 from lottie.serve.security import SecurityGate
 from lottie.serve.service import (
     AgentExecutionError,
+    AgentLoadError,
     AgentNotFoundError,
     AgentService,
     InvalidInputError,
@@ -131,8 +132,9 @@ def test_run_agent_execution_error(
         "lottie.serve.service.build_provider", lambda name: _BoomProvider()
     )
     svc = AgentService(demo)
-    with pytest.raises(AgentExecutionError):
+    with pytest.raises(AgentExecutionError) as exc_info:
         svc.run_agent("echo", {"query": "hi"})
+    assert exc_info.value.__cause__ is not None  # original error chained
 
 
 def test_run_agent_gate_called_input_then_output(
@@ -180,5 +182,33 @@ def test_public_exports() -> None:
         "AgentNotFoundError",
         "InvalidInputError",
         "AgentExecutionError",
+        "AgentLoadError",
     ):
         assert hasattr(serve, symbol), symbol
+
+
+def test_run_agent_bad_config_raises_load_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    demo = _scaffold(tmp_path, monkeypatch)
+    # provider must be a string; a list fails AgentConfig validation, which
+    # load_agent_config surfaces as typer.BadParameter — the core must translate it.
+    (demo / "agents" / "echo" / "config.yaml").write_text(
+        "provider: [not, a, string]\n", encoding="utf-8"
+    )
+    svc = AgentService(demo)
+    with pytest.raises(AgentLoadError):
+        svc.run_agent("echo", {"query": "hi"})
+
+
+def test_run_agent_broken_schema_raises_load_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    demo = _scaffold(tmp_path, monkeypatch)
+    # A SyntaxError in schema.py escapes the importer raw; the core must translate it.
+    (demo / "agents" / "echo" / "schema.py").write_text(
+        "def (this is not valid python\n", encoding="utf-8"
+    )
+    svc = AgentService(demo)
+    with pytest.raises(AgentLoadError):
+        svc.run_agent("echo", {"query": "hi"})

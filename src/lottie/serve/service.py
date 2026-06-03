@@ -35,6 +35,10 @@ class AgentExecutionError(ServeError):
     """The agent raised while running."""
 
 
+class AgentLoadError(ServeError):
+    """Agent exists but its config, schema, or module could not be loaded."""
+
+
 class AgentService:
     """Lists and runs agents under a project root, gated by a SecurityGate."""
 
@@ -63,16 +67,23 @@ class AgentService:
 
         self._gate.check_input(json.dumps(payload))
 
-        cfg = load_agent_config(unit_dir)
-        llm = build_provider(provider or cfg.provider)
+        try:
+            cfg = load_agent_config(unit_dir)
+            llm = build_provider(provider or cfg.provider)
+            input_model = load_input_model(self._root, name)
+        except Exception as exc:  # noqa: BLE001 — keep CLI/import errors out of the core
+            raise AgentLoadError(f"cannot load agent '{name}': {exc}") from exc
 
-        input_model = load_input_model(self._root, name)
         try:
             data = input_model.model_validate(payload)
         except ValidationError as exc:
             raise InvalidInputError(f"invalid input for '{name}': {exc}") from exc
 
-        agent = load_agent_class(self._root, name)(llm=llm)
+        try:
+            agent = load_agent_class(self._root, name)(llm=llm)
+        except Exception as exc:  # noqa: BLE001 — class import/instantiation failure
+            raise AgentLoadError(f"cannot load agent '{name}': {exc}") from exc
+
         try:
             output = agent.run(data)
         except Exception as exc:  # noqa: BLE001 — any agent failure → one typed error

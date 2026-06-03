@@ -6,6 +6,7 @@ from lottie.serve.schema import AgentInfo, RunResult
 from lottie.serve.security import SecurityGate
 from lottie.serve.service import (
     AgentExecutionError,
+    AgentLoadError,
     AgentNotFoundError,
     AgentService,
     InvalidInputError,
@@ -15,6 +16,7 @@ from lottie.serve.service import (
 __all__ = [
     "AgentExecutionError",
     "AgentInfo",
+    "AgentLoadError",
     "AgentNotFoundError",
     "AgentService",
     "InvalidInputError",
