@@ -28,15 +28,17 @@ class CodeSecurityScanSkill(BaseSkill[ScanInput, ScanOutput]):
         )
         try:
             report = json.loads(proc.stdout)
-        except json.JSONDecodeError:
+            findings = [
+                SecurityFinding(
+                    file=str(result["filename"]),
+                    line=int(result["line_number"]),
+                    kind=str(result["test_id"]),
+                    message=str(result["issue_text"]),
+                )
+                for result in report.get("results", [])
+            ]
+        except (json.JSONDecodeError, KeyError, TypeError):
+            # Empty/garbled stdout or an unexpected bandit JSON shape: fail open to
+            # empty findings rather than propagating — mirrors the JSONDecodeError path.
             return ScanOutput(findings=[])
-        findings = [
-            SecurityFinding(
-                file=str(result["filename"]),
-                line=int(result["line_number"]),
-                kind=str(result["test_id"]),
-                message=str(result["issue_text"]),
-            )
-            for result in report.get("results", [])
-        ]
         return ScanOutput(findings=findings)
