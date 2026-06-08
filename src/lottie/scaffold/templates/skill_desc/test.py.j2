@@ -1,0 +1,10 @@
+"""Unit tests for {{ class_name }} (deterministic — no LLM)."""
+from __future__ import annotations
+from skills.{{ name }}.schema import {{ class_name }}Input
+from skills.{{ name }}.skill import {{ class_name }}
+
+
+def test_{{ name }}_runs() -> None:
+    skill = {{ class_name }}()
+    result = skill.run({{ class_name }}Input({{ input_sample }}))
+    assert result is not None

@@ -1,0 +1,23 @@
+# {{ class_name }}
+
+## Role
+Generated from: {{ name }}
+
+## Input
+| Field | Type | Description |
+|---|---|---|
+{% for f in input_fields %}| {{ f.name }} | {{ f.type }} | {{ f.description }} |
+{% endfor %}
+## Output
+| Field | Type | Description |
+|---|---|---|
+{% for f in output_fields %}| {{ f.name }} | {{ f.type }} | {{ f.description }} |
+{% endfor %}
+## Provider
+Default: {{ provider }}
+
+## Tools (Skills used)
+{% for t in tools %}- {{ t }}
+{% endfor %}
+## Policies
+- base

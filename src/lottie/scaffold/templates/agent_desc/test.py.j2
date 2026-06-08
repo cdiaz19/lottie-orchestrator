@@ -1,0 +1,11 @@
+"""Integration tests for {{ class_name }} (MockLLMProvider — no real LLM)."""
+from __future__ import annotations
+from lottie.llm import MockLLMProvider
+from agents.{{ name }}.agent import {{ class_name }}
+from agents.{{ name }}.schema import {{ class_name }}Input
+
+
+def test_{{ name }}_runs() -> None:
+    agent = {{ class_name }}(llm=MockLLMProvider(["mock response"]))
+    result = agent.run({{ class_name }}Input({{ input_sample }}))
+    assert result is not None

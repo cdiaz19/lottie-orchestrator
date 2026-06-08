@@ -1,0 +1,14 @@
+"""Typed input/output models for {{ class_name }}."""
+from __future__ import annotations
+from pydantic import BaseModel
+
+
+class {{ class_name }}Input(BaseModel):
+    """Input for {{ class_name }}."""
+{% for f in input_fields %}    {{ f.name }}: {{ f.type }}
+{% endfor %}
+
+class {{ class_name }}Output(BaseModel):
+    """Output from {{ class_name }}."""
+{% for f in output_fields %}    {{ f.name }}: {{ f.type }}
+{% endfor %}
