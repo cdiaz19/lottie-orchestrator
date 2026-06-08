@@ -2,8 +2,9 @@
 
 Writes rendered files into the target directory, then runs the pipeline in order
 (SecretDetection -> CodeSecurityScan -> mypy -> ruff). On any failure the target
-directory is removed so no partial or unsafe code survives. Scanners run with the
-project root as cwd so mypy resolves package and relative imports.
+directory is removed so no partial or unsafe code survives. Scanners always receive
+absolute paths so they are independent of the subprocess cwd; mypy still derives a
+generated unit's package (and relative imports) by walking up its __init__.py parents.
 """
 
 from __future__ import annotations
