@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -28,6 +29,8 @@ def test_status_empty_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.chdir(tmp_path)
     assert runner.invoke(app, ["init", "demo"]).exit_code == 0
     monkeypatch.chdir(tmp_path / "demo")
+    # init ships a hello agent; remove it to exercise the empty-project rendering.
+    shutil.rmtree(tmp_path / "demo" / "agents" / "hello")
     result = runner.invoke(app, ["status"])
     assert result.exit_code == 0, result.output
     assert "No agents" in result.output
