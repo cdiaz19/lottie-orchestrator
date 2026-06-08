@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from lottie.project.discovery import UnitInfo, discover_agents, discover_skills
-from lottie.scaffold.generator import _class_name
+from lottie.scaffold.generator import Kind, _class_name
 
 _PLACEHOLDER = "_None yet_"
 _AGENTS_HEADING = "## Agents"
@@ -28,17 +28,20 @@ def sync(root: Path) -> None:
     md.write_text(text, encoding="utf-8")
 
 
-def _entries(units: list[UnitInfo], kind: str) -> list[str]:
+def _entries(units: list[UnitInfo], kind: Kind) -> list[str]:
     if not units:
         return [_PLACEHOLDER]
-    return [
-        f"- **{_class_name(u.name, kind)}** — `{kind}s/{u.name}/`"  # type: ignore[arg-type]
-        for u in units
-    ]
+    return [f"- **{_class_name(u.name, kind)}** — `{kind}s/{u.name}/`" for u in units]
 
 
 def _replace_section(text: str, heading: str, body: list[str]) -> str:
-    """Replace lines from `heading` until the next `## ` (or EOF) with heading+body."""
+    """Replace lines from `heading` until the next `## ` (or EOF) with heading+body.
+
+    Assumes LOTTIE.md's structure: a `# title`, then the `## Agents` / `## Skills`
+    registry sections, which are the trailing content. Content after the final
+    section (a footer) or a `## ` inside a fenced code block is not modelled, so
+    sync is meant only for this tool-managed file, not arbitrary Markdown.
+    """
     lines = text.splitlines()
     try:
         start = lines.index(heading)
