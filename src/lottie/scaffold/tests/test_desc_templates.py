@@ -9,7 +9,7 @@ def _ctx(kind: str) -> PlanRenderContext:
         name="greeter",
         class_name="GreeterAgent" if kind == "agent" else "GreeterSkill",
         provider="anthropic/claude-sonnet-4-6",
-        kind=kind,  # type: ignore[arg-type]
+        kind=kind,
         input_fields=[FieldSpec(name="who", type="str")],
         output_fields=[FieldSpec(name="greeting", type="str")],
         system_prompt="Greet warmly.",
