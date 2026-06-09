@@ -38,7 +38,8 @@ def test_list_agents_returns_name_and_provider(
     demo = _scaffold(tmp_path, monkeypatch)
     svc = AgentService(demo)
     infos = svc.list_agents()
-    assert [i.name for i in infos] == ["echo"]
+    # `lottie init` ships a runnable hello agent, so it lists alongside `echo`.
+    assert [i.name for i in infos] == ["echo", "hello"]
     assert infos[0].provider is not None
     assert "anthropic" in infos[0].provider
 
