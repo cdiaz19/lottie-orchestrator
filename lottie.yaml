@@ -1,0 +1,9 @@
+project: lottie-orchestrator
+providers:
+  default: anthropic/claude-sonnet-4-6
+  fallback: openai/gpt-4o
+policies:
+  - base
+registry:
+  agents: agents/
+  skills: skills/
