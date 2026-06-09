@@ -9,18 +9,19 @@ Parsing contract
 The skill asks the model to return:
 
 1. A short prose paragraph (the *summary*).
-2. Bullet points using ``-``, ``*``, ``•``, or decimal numbering (``1.``).
+2. Bullet points using ``-``, ``*``, ``•``, or decimal numbering (``1.``/``1)``).
 
-Lines that begin with a bullet marker are collected as ``points``; the first
-contiguous non-bullet block becomes the prose ``summary``.  Bullet text is
-stripped of its leading marker and surrounding whitespace.
+Parsing is order-independent: every non-empty line is classified individually.
+Lines matching the bullet regex become ``points`` (marker stripped); all other
+non-empty lines become prose.
 
-Edge cases:
-- No bullets in the response → ``points=[]``, ``summary`` = full stripped
-  response.
-- Bullets appear before any prose → ``summary`` = first bullet-free paragraph
-  found, or an empty string if none exists.
-- ``points`` is always capped at ``data.max_points``.
+- ``summary`` = all prose lines joined with a single space (order-preserved,
+  leading AND trailing prose both included).
+- ``points`` = all bullet lines in order, capped to ``max_points``.
+- Fallback: if there are NO prose lines (everything was bullets), ``summary``
+  is set to the full stripped response text so it is never empty when the model
+  returned content.
+- No bullets at all → ``points=[]``, ``summary`` = full stripped response.
 """
 
 from __future__ import annotations
@@ -33,8 +34,9 @@ from lottie.llm import LLMProvider, Message
 
 from .schema import SummarizerInput, SummarizerOutput
 
-# Matches lines that are bullet markers: -, *, •, or "N." / "N)"
-_BULLET_RE = re.compile(r"^\s*([-*•]|\d+[.)]) +(.+)$")
+# Matches lines that are bullet markers: -, *, •, or "N." / "N)" (1–2 digits only
+# to avoid classifying prose like "100. Some sentence." as a list item).
+_BULLET_RE = re.compile(r"^\s*([-*•]|\d{1,2}[.)]) +(.+)$")
 
 _SYSTEM_PROMPT = """\
 You are a precise summarisation assistant.
@@ -50,6 +52,10 @@ Do not add headers, preamble, or any other text.
 def _parse_response(text: str, max_points: int) -> tuple[str, list[str]]:
     """Split *text* into a prose summary and a capped bullet-point list.
 
+    Parsing is order-independent: each non-empty line is classified on its own
+    merit.  Lines matching ``_BULLET_RE`` become points; all other non-empty
+    lines become prose.
+
     Parameters
     ----------
     text:
@@ -60,31 +66,32 @@ def _parse_response(text: str, max_points: int) -> tuple[str, list[str]]:
     Returns
     -------
     tuple[str, list[str]]
-        ``(summary, points)`` where *summary* is non-empty stripped prose
-        (or the whole response when no bullets are present) and *points* is
-        a list of at most *max_points* strings.
+        ``(summary, points)`` where *summary* is all prose lines joined with a
+        single space (or the full stripped response when no prose lines exist),
+        and *points* is a list of at most *max_points* strings.
     """
     lines = text.splitlines()
 
     prose_lines: list[str] = []
     points: list[str] = []
-    in_prose = True
 
     for line in lines:
         m = _BULLET_RE.match(line)
         if m:
-            in_prose = False
             points.append(m.group(2).strip())
         else:
             stripped = line.strip()
-            if in_prose and stripped:
+            if stripped:
                 prose_lines.append(stripped)
 
-    summary = " ".join(prose_lines).strip()
-
-    # If there were no bullets, treat the entire response as prose
+    # If there were no bullets, treat the entire response as prose.
     if not points:
         return text.strip(), []
+
+    # Build summary from ALL prose lines (leading and trailing), joined.
+    # Fallback: if the model returned only bullets, use the full text so that
+    # summary is never empty when content was present.
+    summary = " ".join(prose_lines) if prose_lines else text.strip()
 
     return summary, points[:max_points]
 
@@ -132,6 +139,10 @@ class SummarizerSkill(BaseSkill[SummarizerInput, SummarizerOutput]):
                 ),
             ),
         ]
+        # TODO: LLM token usage from response.usage is NOT accumulated into a
+        # RunContext here — skills lack the accumulator that BaseAgent.complete
+        # provides.  As a result, last_metrics reports 0 tokens for skills.
+        # This is a known architectural gap (Phase 2 tracking work item).
         response = self._llm.complete(messages)
         summary, points = _parse_response(response.content, data.max_points)
         return SummarizerOutput(summary=summary, points=points)

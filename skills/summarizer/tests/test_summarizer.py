@@ -120,3 +120,66 @@ def test_summarizer_di_constructor_forwarding() -> None:
     )
     assert skill.name == "custom-name"
     assert skill._enable_benchmarks is False
+
+
+# ---------------------------------------------------------------------------
+# Fix 1: max_points lower bound
+# ---------------------------------------------------------------------------
+
+
+def test_max_points_zero_raises_validation_error() -> None:
+    """max_points=0 must be rejected by Pydantic (ge=1)."""
+    with pytest.raises(ValidationError):
+        SummarizerInput(text="x", max_points=0)
+
+
+def test_max_points_negative_raises_validation_error() -> None:
+    """max_points=-1 must be rejected by Pydantic (ge=1)."""
+    with pytest.raises(ValidationError):
+        SummarizerInput(text="x", max_points=-1)
+
+
+def test_max_points_one_is_valid() -> None:
+    """max_points=1 is the minimum allowed value."""
+    inp = SummarizerInput(text="x", max_points=1)
+    assert inp.max_points == 1
+
+
+# ---------------------------------------------------------------------------
+# Fix 2: order-independent parsing
+# ---------------------------------------------------------------------------
+
+BULLETS_BEFORE_PROSE = "- A\n- B\nSome prose."
+TRAILING_PROSE = "Intro.\n- A\n- B\nConclusion."
+ALL_BULLETS = "- A\n- B"
+
+
+def test_parse_bullets_before_prose_summary_nonempty() -> None:
+    """bullets-before-prose: summary contains the prose line, points == ['A','B']."""
+    mock = MockLLMProvider([BULLETS_BEFORE_PROSE])
+    skill = SummarizerSkill(mock)
+    result = skill.run(SummarizerInput(text="x", max_points=5))
+
+    assert "Some prose." in result.summary
+    assert result.summary != ""
+    assert result.points == ["A", "B"]
+
+
+def test_parse_trailing_prose_joined_into_summary() -> None:
+    """Leading and trailing prose both appear in summary, joined."""
+    mock = MockLLMProvider([TRAILING_PROSE])
+    skill = SummarizerSkill(mock)
+    result = skill.run(SummarizerInput(text="x", max_points=5))
+
+    assert result.summary == "Intro. Conclusion."
+    assert result.points == ["A", "B"]
+
+
+def test_parse_all_bullets_no_prose_summary_nonempty() -> None:
+    """All-bullets response: summary falls back to full stripped text (non-empty)."""
+    mock = MockLLMProvider([ALL_BULLETS])
+    skill = SummarizerSkill(mock)
+    result = skill.run(SummarizerInput(text="x", max_points=5))
+
+    assert result.summary == ALL_BULLETS.strip()
+    assert result.points == ["A", "B"]

@@ -12,7 +12,7 @@ imported.
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `text` | `str` | yes | — | The text to summarise |
-| `max_points` | `int` | no | `5` | Maximum bullet points to return |
+| `max_points` | `int` | no | `5` | Maximum bullet points to return (must be ≥ 1) |
 
 ## Output
 
@@ -23,11 +23,20 @@ imported.
 
 ## Parsing contract
 
-The skill asks the model to return prose first, then `- ` bullets.  Lines
-matching `[-*•]` or `N.`/`N)` prefixes are collected as `points`; the
-preceding non-bullet prose becomes `summary`.  When no bullets are present,
-`points=[]` and `summary` is the full stripped response.  `points` is always
-capped to `max_points`.
+The skill asks the model to return a prose paragraph and `- ` bullets, but
+parsing is **order-independent**: every non-empty line is classified on its own.
+
+- Lines matching `[-*•]` or `N.`/`N)` (1–2 digit markers only, to avoid
+  false positives on prose like "100. Some sentence.") are collected as
+  `points`; the bullet marker is stripped.
+- All other non-empty lines are prose lines.
+- `summary` = all prose lines joined with a single space (leading AND trailing
+  prose are both included, nothing is dropped).
+- `points` is always capped to `max_points`.
+- **Fallback (all-bullets):** if the response contains no prose lines,
+  `summary` is set to the full stripped response text so it is never empty
+  when the model returned content.
+- **No bullets at all:** `points=[]`, `summary` = full stripped response.
 
 ## LLM contract
 
