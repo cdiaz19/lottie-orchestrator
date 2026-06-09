@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import json
 import py_compile
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from typer.testing import CliRunner
 
 from lottie.cli import app
+from lottie.llm import MockLLMProvider
 
 runner = CliRunner()
 
@@ -165,3 +168,62 @@ def test_generated_project_tests_pass(
         text=True,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+_DESC_AGENT_PLAN = {
+    "class_name": "GreeterAgent",
+    "input_fields": [{"name": "who", "type": "str", "description": "name"}],
+    "output_fields": [{"name": "greeting", "type": "str", "description": "msg"}],
+    "system_prompt": "Greet warmly.",
+    "run_body": (
+        "from lottie.llm import Message\n"
+        "response = self.complete([Message(role='system', content=SYSTEM_PROMPT),"
+        " Message(role='user', content=data.who)])\n"
+        "return GreeterAgentOutput(greeting=response.content)"
+    ),
+    "tools": [],
+}
+
+
+def test_create_agent_from_desc(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    demo = _init_demo(tmp_path)
+    monkeypatch.chdir(demo)
+    fake_llm = MockLLMProvider([json.dumps(_DESC_AGENT_PLAN)])
+    with patch("lottie.cli.create.build_provider", return_value=fake_llm):
+        result = runner.invoke(
+            app, ["create", "agent", "greeter", "--from-desc", "greets people"]
+        )
+    assert result.exit_code == 0, result.output
+    agent_py = (demo / "agents" / "greeter" / "agent.py").read_text()
+    assert "class GreeterAgent(BaseAgent" in agent_py
+    assert "who: str" in (demo / "agents" / "greeter" / "schema.py").read_text()
+
+
+_DESC_SKILL_PLAN = {
+    "class_name": "ShoutSkill",
+    "input_fields": [{"name": "text", "type": "str", "description": "in"}],
+    "output_fields": [{"name": "result", "type": "str", "description": "out"}],
+    "system_prompt": "",
+    "run_body": "return ShoutSkillOutput(result=data.text.upper())",
+    "tools": [],
+}
+
+
+def test_create_skill_from_desc(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    demo = _init_demo(tmp_path)
+    monkeypatch.chdir(demo)
+    fake_llm = MockLLMProvider([json.dumps(_DESC_SKILL_PLAN)])
+    with patch("lottie.cli.create.build_provider", return_value=fake_llm):
+        result = runner.invoke(
+            app, ["create", "skill", "shout", "--from-desc", "uppercases text"]
+        )
+    assert result.exit_code == 0, result.output
+    skill_py = (demo / "skills" / "shout" / "skill.py").read_text()
+    assert "class ShoutSkill(BaseSkill" in skill_py
+    assert "text: str" in (demo / "skills" / "shout" / "schema.py").read_text()

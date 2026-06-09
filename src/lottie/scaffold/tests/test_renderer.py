@@ -16,6 +16,7 @@ def test_render_input_wraps_context() -> None:
     ctx = RenderContext(name="x", class_name="XSkill")
     inp = RenderInput(template="skill/skill.py.j2", context=ctx)
     assert inp.template == "skill/skill.py.j2"
+    assert isinstance(inp.context, RenderContext)
     assert inp.context.class_name == "XSkill"
 
 

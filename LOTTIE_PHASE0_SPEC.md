@@ -329,22 +329,22 @@ Claude Code reads it when present, ignores it silently when absent — so public
 
 ## 8. Phase 0 Deliverables Checklist
 
-- [ ] `lottie` CLI installable via `pip install lottie-orchestrator`
-- [ ] `lottie init` creates a valid project with hello-world agent
-- [ ] `lottie create agent` and `lottie create skill` scaffold all required files
-- [ ] `BaseAgent` and `BaseSkill` abstract classes with auto-instrumentation
-- [ ] `LLMProvider` abstraction wrapping litellm
-- [ ] `lottie run` executes a single agent end-to-end
-- [ ] `lottie benchmark` records all metrics to `.lottie/benchmarks/`
-- [ ] `lottie doctor` validates environment
-- [ ] CI/CD: mypy, ruff, pytest on every push
-- [ ] `ScaffolderAgent` — the AI-powered generator agent
-- [ ] `TemplateRendererSkill`, `SchemaValidatorSkill` built-in skills
-- [ ] `LOTTIE.md` auto-updated by `lottie status`
-- [ ] `CLAUDE.md` committed to repo root (public, clean)
-- [ ] `.private-journey/` created locally and added to `.gitignore`
-- [ ] `.private-journey/context.md` — personal context for Claude Code
-- [ ] `.private-journey/JOURNEY.md` — dev log initialized
+- [ ] `lottie` CLI installable via `pip install lottie-orchestrator` _(package + entry point configured; not yet published to PyPI)_
+- [x] `lottie init` creates a valid project with hello-world agent
+- [x] `lottie create agent` and `lottie create skill` scaffold all required files
+- [x] `BaseAgent` and `BaseSkill` abstract classes with auto-instrumentation
+- [x] `LLMProvider` abstraction wrapping litellm
+- [x] `lottie run` executes a single agent end-to-end
+- [x] `lottie benchmark` records all metrics to `.lottie/benchmarks/`
+- [x] `lottie doctor` validates environment
+- [x] CI/CD: mypy, ruff, pytest on every push
+- [x] `ScaffolderAgent` — the AI-powered generator agent
+- [x] `TemplateRendererSkill`, `SchemaValidatorSkill` built-in skills
+- [x] `LOTTIE.md` auto-updated by `lottie status`
+- [x] `CLAUDE.md` committed to repo root (public, clean)
+- [x] `.private-journey/` created locally and added to `.gitignore`
+- [x] `.private-journey/context.md` — personal context for Claude Code
+- [x] `.private-journey/JOURNEY.md` — dev log initialized
 
 ---
 

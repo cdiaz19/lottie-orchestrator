@@ -1,0 +1,10 @@
+provider: {{ provider }}
+model_params:
+  temperature: 0.3
+  max_tokens: 2048
+capabilities: [{{ tools | join(", ") }}]
+policies:
+  - base
+memory:
+  enabled: false
+  namespace: {{ name }}
