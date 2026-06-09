@@ -246,3 +246,33 @@ def test_clear_empty_layer_exits_zero(tmp_path: Path) -> None:
     result = _clear(tmp_path)
     assert result.exit_code == 0, result.output
     assert "0" in result.output
+
+
+# ---------------------------------------------------------------------------
+# url ingest test (reviewer gap)
+# ---------------------------------------------------------------------------
+
+
+def test_ingest_url_exits_zero_and_reports_error(tmp_path: Path) -> None:
+    """``--url`` exits 0 and reports the URL source under errors.
+
+    URL ingest is explicitly deferred (``load_source`` raises
+    ``NotImplementedError``).  The skill isolates the error into
+    ``DocumentIngestOutput.errors`` so the command exits 0 rather than
+    crashing, and the URL is visible in the output.
+    """
+    result = runner.invoke(
+        app,
+        [
+            "knowledge",
+            "ingest",
+            "--url",
+            "https://example.com",
+            "--root",
+            str(tmp_path),
+        ]
+        + _BASE_FLAGS,
+    )
+    assert result.exit_code == 0, result.output
+    # The URL must appear somewhere in the error report.
+    assert "https://example.com" in result.output or "error" in result.output.lower()

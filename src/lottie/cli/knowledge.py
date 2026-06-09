@@ -30,7 +30,8 @@ from rich.table import Table
 from lottie.knowledge import GraphStore, KnowledgeManifest
 from lottie.knowledge.chunking import ChunkConfig, chunk_document
 from lottie.knowledge.embeddings import build_embedding_provider
-from lottie.knowledge.ingest import IngestSource
+from lottie.knowledge.ingest import DocumentIngestInput, DocumentIngestSkill, IngestSource
+from lottie.knowledge.schema import KnowledgeLayer
 from lottie.knowledge.store import build_vector_store
 
 knowledge_app = typer.Typer(
@@ -101,34 +102,6 @@ def ingest(
 
     At least one of --file, --text, or --url must be provided.
     """
-    # Lazy import so the skill's heavy deps don't slow down --help.
-    # Ensure the lottie-orchestrator project root (containing the real ``skills/``
-    # package) is first on sys.path before importing.  Other commands such as
-    # ``lottie run`` use ``discovery.py``, which may insert a *different* project
-    # root (e.g. a scaffolded demo project) ahead of ours, causing
-    # ``skills.document_ingest`` to resolve to the empty scaffolded ``skills/``.
-    import importlib
-    import sys as _sys
-
-    import lottie as _lottie_pkg
-
-    _lottie_root = str(Path(_lottie_pkg.__file__).parent.parent.parent)
-    if _lottie_root not in _sys.path:
-        _sys.path.insert(0, _lottie_root)
-    else:
-        # Move it to the front so it takes precedence over any tmp project root.
-        _sys.path.remove(_lottie_root)
-        _sys.path.insert(0, _lottie_root)
-    # Invalidate the stale cached ``skills`` module if it was loaded from a
-    # different root (e.g. a scaffolded demo project's empty skills/ dir).
-    _stale = [m for m in list(_sys.modules) if m == "skills" or m.startswith("skills.")]
-    for _m in _stale:
-        del _sys.modules[_m]
-    importlib.invalidate_caches()
-
-    from skills.document_ingest.schema import DocumentIngestInput
-    from skills.document_ingest.skill import DocumentIngestSkill
-
     # Validate at least one source.
     if not file and text is None and url is None:
         _console.print("[red]Error:[/red] provide at least one of --file, --text, or --url.")
@@ -139,8 +112,6 @@ def ingest(
     vector_store = build_vector_store(store, root)
 
     # Convert inputs to IngestSource models.
-    from lottie.knowledge.schema import KnowledgeLayer
-
     try:
         target_layer = KnowledgeLayer(layer)
     except ValueError as exc:
