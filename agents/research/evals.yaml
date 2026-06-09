@@ -1,0 +1,20 @@
+cases:
+  - name: multi-agent query returns non-empty digest
+    input:
+      query: "What are multi-agent AI systems?"
+      k: 5
+      layers: []
+      expand_graph: true
+    expect:
+      contains:
+        digest: "agent"
+
+  - name: query about coordination returns digest
+    input:
+      query: "How do agents coordinate in a multi-agent system?"
+      k: 3
+      layers: []
+      expand_graph: false
+    expect:
+      contains:
+        digest: "agent"

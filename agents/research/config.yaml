@@ -1,0 +1,12 @@
+provider: anthropic/claude-sonnet-4-6
+model_params:
+  temperature: 0.2
+  max_tokens: 2048
+capabilities:
+  - retrieval
+  - summarizer
+policies:
+  - base
+memory:
+  enabled: false
+  namespace: research
