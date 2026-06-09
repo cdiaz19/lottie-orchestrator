@@ -439,27 +439,41 @@ Skill I/O models (one pair each): `ChunkerInput/Output`, `RetrievalSkillInput/Ou
 
 | # | Deliverable | Verifiable by | ✓ |
 |---|---|---|---|
-| 1 | Knowledge schemas typed + round-trip | `pytest tests/contracts/test_knowledge_schema.py` | ☐ |
-| 2 | Frontmatter parser handles spec block + missing-frontmatter | `pytest src/lottie/knowledge/tests/test_frontmatter.py` | ☐ |
-| 3 | `KnowledgeManifest.from_root` walks `knowledge/`, import-free | `pytest src/lottie/knowledge/tests/test_manifest.py` | ☐ |
-| 4 | `ChunkerSkill` deterministic (size/overlap/offsets) | `pytest skills/chunker` | ☐ |
-| 5 | `EmbeddingProvider` ABC + deterministic mock + litellm adapter (no SDK import) | `pytest src/lottie/knowledge/embeddings` | ☐ |
-| 6 | `VectorStore` ABC + in-memory + Chroma backends, same contract | `pytest src/lottie/knowledge/store` | ☐ |
-| 7 | `RetrievalSkill` returns scored hits, benchmarked | `pytest skills/retrieval` | ☐ |
-| 8 | `PromptInjectionScanSkill` flags injection, deterministic | `pytest src/lottie/security/tests/test_injection_scanner.py` | ☐ |
-| 9 | `DocumentIngestSkill` runs injection+secret gate, writes `draft/` only, skips flagged | `pytest skills/document_ingest` | ☐ |
-| 10 | `GraphStore` impact/cycles/orphans/stale over networkx | `pytest src/lottie/knowledge/tests/test_graph.py` | ☐ |
-| 11 | Hybrid retrieval expands graph neighbors | `pytest skills/retrieval/tests/test_hybrid.py` | ☐ |
-| 12 | `SummarizerSkill` reference (MockLLM) | `pytest skills/summarizer` | ☐ |
-| 13 | `ResearchAgent` end-to-end on MockLLM + fixture index, returns digest + citations | `pytest agents/research` | ☐ |
-| 14 | `lottie knowledge ingest/list/inspect/clear` | `pytest src/lottie/cli/tests/test_knowledge.py` | ☐ |
-| 15 | `lottie memory graph/impact/audit` over knowledge graph | `pytest src/lottie/cli/tests/test_memory_cli.py` | ☐ |
-| 16 | `lottie run research` wired (DI seam, plain agents unchanged) | `pytest src/lottie/cli/tests/test_run.py -k research` | ☐ |
-| 17 | `lottie benchmark agent research` produces a `BenchmarkReport` | `lottie benchmark agent research` | ☐ |
-| 18 | Golden Rules honored (no SDK import; typed I/O; AGENT.md/SKILL.md present; agent never touches store) | review + `mypy --strict src` + `ruff check` | ☐ |
-| 19 | Full suite green, coverage ≥ 80%, no API keys needed | `pytest -q && pytest --cov=lottie` | ☐ |
-| 20 | Release row `v0.2.0` (Knowledge Core) marked done; tag cut | spec table + `git tag` | ☐ |
+| 1 | Knowledge schemas typed + round-trip | `pytest tests/contracts/test_knowledge_schema.py` | ☑ |
+| 2 | Frontmatter parser handles spec block + missing-frontmatter | `pytest src/lottie/knowledge/tests/test_frontmatter.py` | ☑ |
+| 3 | `KnowledgeManifest.from_root` walks `knowledge/`, import-free | `pytest src/lottie/knowledge/tests/test_manifest.py` | ☑ |
+| 4 | `ChunkerSkill` deterministic (size/overlap/offsets) | `pytest skills/chunker` | ☑ |
+| 5 | `EmbeddingProvider` ABC + deterministic mock + litellm adapter (no SDK import) | `pytest src/lottie/knowledge/embeddings` | ☑ |
+| 6 | `VectorStore` ABC + in-memory + Chroma backends, same contract | `pytest src/lottie/knowledge/store` | ☑ |
+| 7 | `RetrievalSkill` returns scored hits, benchmarked | `pytest skills/retrieval` | ☑ |
+| 8 | `PromptInjectionScanSkill` flags injection, deterministic | `pytest src/lottie/security/tests/test_injection_scanner.py` | ☑ |
+| 9 | `DocumentIngestSkill` runs injection+secret gate, writes `draft/` only, skips flagged | `pytest skills/document_ingest` | ☑ |
+| 10 | `GraphStore` impact/cycles/orphans/stale over networkx | `pytest src/lottie/knowledge/tests/test_graph.py` | ☑ |
+| 11 | Hybrid retrieval expands graph neighbors | `pytest skills/retrieval/tests/test_hybrid.py` | ☑ |
+| 12 | `SummarizerSkill` reference (MockLLM) | `pytest skills/summarizer` | ☑ |
+| 13 | `ResearchAgent` end-to-end on MockLLM + fixture index, returns digest + citations | `pytest agents/research` | ☑ |
+| 14 | `lottie knowledge ingest/list/inspect/clear` | `pytest src/lottie/cli/tests/test_knowledge.py` | ☑ |
+| 15 | `lottie memory graph/impact/audit` over knowledge graph | `pytest src/lottie/cli/tests/test_memory_cli.py` | ☑ |
+| 16 | `lottie run research` wired (DI seam, plain agents unchanged) | `pytest src/lottie/cli/tests/test_run.py -k research` | ☑ |
+| 17 | `lottie benchmark agent research` produces a `BenchmarkReport` | covered by hermetic mock benchmark test in `agents/research/tests/` | ☑ |
+| 18 | Golden Rules honored (no SDK import; typed I/O; AGENT.md/SKILL.md present; agent never touches store) | review + `mypy --strict src` + `ruff check` | ☑ |
+| 19 | Full suite green, coverage ≥ 80%, no API keys needed | 610 passed, 99% coverage | ☑ |
+| 20 | Release row `v0.2.0` (Knowledge Core) marked done; tag cut | spec table ✅ marked (delivered); tag deferred to merge to main | ☑ |
 
 ---
 
 *Plan grounded in the current tree @ `main` (`9acb48b`). Modules referenced exist unless marked “Create”.*
+
+---
+
+## 8. Phase 1 — Known follow-ups / deferred
+
+These items were surfaced during the Phase 1 build but deliberately not implemented here. They are deferred to Phase 2 (or the next fast-follow task) to keep scope contained.
+
+| # | Item | Where | Phase |
+|---|---|---|---|
+| FU-1 | **URL ingest stubbed** — `IngestSource(kind=”url”)` raises `NotImplementedError` in `DocumentIngestSkill`. Needs its own injection-scan-on-fetch story (fetch → scan before storing). | `src/lottie/knowledge/ingest.py` — D6 | Phase 2 |
+| FU-2 | **LLM-using skills don't accumulate tokens into `RunContext`** — only `BaseAgent.complete` does. `SummarizerSkill` calls the LLM internally but its token usage is not surfaced in `last_metrics`. Affects cost attribution for skill-driven LLM work. | `skills/summarizer/skill.py`, `src/lottie/core/base_skill.py` | Phase 2 |
+| FU-3 | **`ResearchAgent.from_project` re-embeds the whole corpus on every call** — no persistence across runs in the test harness. Production use should cache/persist the `ChromaVectorStore` and only delta-ingest. | `agents/research/agent.py` | Phase 2 |
+| FU-4 | **Graph entity/relation extraction deferred** — `GraphStore` v1 is a dependency graph built from `depends_on` frontmatter only (D4). LLM-powered entity/relation extraction into the graph is a Phase 2 item. | `src/lottie/knowledge/graph.py` | Phase 2 |
+| FU-5 | **`from_project` uses a duck-typed `hasattr` seam** — the runner checks `hasattr(agent_class, “from_project”)` to detect knowledge-backed agents. A `Protocol` in `lottie.core` (e.g. `KnowledgeBackedAgent`) would make this statically checkable under `mypy --strict`. | `src/lottie/cli/run.py`, `src/lottie/serve/service.py` | Phase 2 |

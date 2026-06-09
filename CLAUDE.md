@@ -98,12 +98,17 @@ lottie run <agent> --provider openai   # override provider for this run
 lottie serve --port 8080               # start MCP + OpenAI-compat + REST
 
 # Knowledge
+lottie knowledge ingest ./docs         # ingest docs into knowledge layer
+lottie knowledge ingest --format graphify ./graph.json  # import external graph
+lottie knowledge list                  # list all knowledge documents in the manifest
+lottie knowledge inspect <id>          # frontmatter, chunk count, and dependents for a doc
+lottie knowledge clear                 # drop vector store / draft docs (with confirmation)
+
+# Memory graph
 lottie memory graph                    # visualize dependency graph
 lottie memory impact <file>            # what breaks if this is deprecated?
 lottie memory audit                    # find cycles, orphans, stale deps (90d)
 lottie memory review                   # surface drafts for human review
-lottie knowledge ingest ./docs         # ingest docs into knowledge layer
-lottie knowledge ingest --format graphify ./graph.json  # import external graph
 
 # Benchmarking & audit
 lottie benchmark agent <name>          # run eval suite, record all metrics
