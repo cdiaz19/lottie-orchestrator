@@ -119,3 +119,25 @@ class TestMockEmbeddingProviderCustomDim:
         v1 = MockEmbeddingProvider(dim=64).embed(["extended"])[0].vector
         v2 = MockEmbeddingProvider(dim=64).embed(["extended"])[0].vector
         assert v1 == v2
+
+    def test_dim_8193_does_not_overflow(self) -> None:
+        """dim=8193 must not raise ValueError.
+
+        Before the fix, bytes([counter]) raised ValueError once counter > 255
+        (i.e. after 256 extra rounds * 32 bytes = 8192 bytes generated).
+        Counter is now encoded with 2 bytes so the limit is 65535 rounds.
+        """
+        result = MockEmbeddingProvider(dim=8193).embed(["x"])[0]
+        assert len(result.vector) == 8193
+        assert l2_norm(result.vector) == pytest.approx(1.0, abs=1e-6)
+
+    def test_dim_32_exact_digest(self) -> None:
+        """dim=32 equals the SHA-256 digest size — the extension loop never runs.
+
+        Must return a deterministic length-32 L2-normalised vector.
+        """
+        v1 = MockEmbeddingProvider(dim=32).embed(["x"])[0]
+        v2 = MockEmbeddingProvider(dim=32).embed(["x"])[0]
+        assert len(v1.vector) == 32
+        assert l2_norm(v1.vector) == pytest.approx(1.0, abs=1e-6)
+        assert v1.vector == v2.vector

@@ -6,7 +6,7 @@ real provider (CLAUDE.md rule 5).
 
 Arbitrary ``dim`` values are supported.  A single SHA-256 digest is 32 bytes;
 for ``dim > 32`` the implementation generates additional bytes by iteratively
-re-hashing: ``sha256(digest + bytes([counter]))`` for counter = 1, 2, …
+re-hashing: ``sha256(digest + counter.to_bytes(2, "big"))`` for counter = 1, 2, …
 Each byte is mapped to a float in [-1, 1] via ``(byte / 255.0) * 2 - 1``.
 The resulting vector is L2-normalised before being returned.
 """
@@ -57,7 +57,7 @@ class MockEmbeddingProvider(EmbeddingProvider):
         buf = bytearray(seed)
         counter = 1
         while len(buf) < self._dim:
-            buf.extend(hashlib.sha256(seed + bytes([counter])).digest())
+            buf.extend(hashlib.sha256(seed + counter.to_bytes(2, "big")).digest())
             counter += 1
         return bytes(buf[: self._dim])
 

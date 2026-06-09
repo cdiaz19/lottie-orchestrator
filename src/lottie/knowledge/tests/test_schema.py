@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import pytest
+from pydantic import ValidationError
+
 from lottie.knowledge.schema import (
     Chunk,
     DocStatus,
     Document,
+    Embedding,
     KnowledgeLayer,
     RetrievalHit,
     RetrievalQuery,
@@ -60,3 +64,16 @@ def test_document_status_explicit_curated() -> None:
         status=DocStatus.CURATED,
     )
     assert d.status == DocStatus.CURATED
+
+
+def test_embedding_valid_dim_matches_vector() -> None:
+    """Embedding with matching dim and vector length is valid."""
+    emb = Embedding(vector=[0.1, 0.2], model="m", dim=2)
+    assert emb.dim == 2
+    assert emb.vector == [0.1, 0.2]
+
+
+def test_embedding_mismatched_dim_raises_validation_error() -> None:
+    """Embedding with dim != len(vector) must raise ValidationError."""
+    with pytest.raises(ValidationError, match="Embedding.dim=3 but vector has 2 elements"):
+        Embedding(vector=[0.1, 0.2], model="m", dim=3)

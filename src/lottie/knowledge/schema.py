@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 
 class KnowledgeLayer(StrEnum):
@@ -62,6 +62,14 @@ class Embedding(BaseModel):
     vector: list[float]
     model: str
     dim: int
+
+    @model_validator(mode="after")
+    def _check_dim_matches_vector(self) -> Embedding:
+        if len(self.vector) != self.dim:
+            raise ValueError(
+                f"Embedding.dim={self.dim} but vector has {len(self.vector)} elements"
+            )
+        return self
 
 
 class EmbeddedChunk(BaseModel):
