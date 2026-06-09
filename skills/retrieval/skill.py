@@ -61,7 +61,10 @@ class RetrievalSkill(BaseSkill[RetrievalSkillInput, RetrievalSkillOutput]):
     def _execute(self, data: RetrievalSkillInput) -> RetrievalSkillOutput:
         """Embed the query text and retrieve ranked hits from the store."""
         q = data.query
-        embedding = self._embedder.embed([q.text])[0]
+        embeddings = self._embedder.embed([q.text])
+        if not embeddings:
+            raise ValueError("embedding provider returned no embedding for the query text")
+        embedding = embeddings[0]
         hits = self._store.query(
             embedding,
             q.k,

@@ -181,3 +181,65 @@ def test_empty_layers_means_no_filter() -> None:
     # Default layers=[] → no filter
     out = skill.run(RetrievalSkillInput(query=RetrievalQuery(text="text", k=5)))
     assert len(out.result.hits) == 2
+
+
+# ---------------------------------------------------------------------------
+# Tags filter tests
+# ---------------------------------------------------------------------------
+
+
+def test_tags_filter_returns_only_matching_chunk() -> None:
+    """tags=['jwt'] returns only the auth/jwt chunk, not the billing chunk."""
+    embedder = MockEmbeddingProvider()
+    store = InMemoryVectorStore()
+
+    auth_text = "authentication with jwt tokens"
+    auth_chunk = Chunk(
+        id="auth0#0",
+        doc_id="auth0",
+        index=0,
+        text=auth_text,
+        start=0,
+        end=len(auth_text),
+        metadata={"layer": "global", "tags": "auth,jwt"},
+    )
+    auth_emb = embedder.embed([auth_text])[0]
+
+    billing_text = "billing and payment processing"
+    billing_chunk = Chunk(
+        id="bill0#0",
+        doc_id="bill0",
+        index=0,
+        text=billing_text,
+        start=0,
+        end=len(billing_text),
+        metadata={"layer": "global", "tags": "billing"},
+    )
+    billing_emb = embedder.embed([billing_text])[0]
+
+    store.add([
+        EmbeddedChunk(chunk=auth_chunk, embedding=auth_emb),
+        EmbeddedChunk(chunk=billing_chunk, embedding=billing_emb),
+    ])
+
+    skill = RetrievalSkill(embedder, store)
+
+    # jwt tag → only auth chunk
+    out_jwt = skill.run(
+        RetrievalSkillInput(
+            query=RetrievalQuery(text="token auth", k=5, tags=["jwt"])
+        )
+    )
+    jwt_ids = {h.chunk.id for h in out_jwt.result.hits}
+    assert "auth0#0" in jwt_ids, "auth/jwt chunk should be included for tags=['jwt']"
+    assert "bill0#0" not in jwt_ids, "billing chunk must be excluded for tags=['jwt']"
+
+    # billing tag → only billing chunk
+    out_billing = skill.run(
+        RetrievalSkillInput(
+            query=RetrievalQuery(text="payment", k=5, tags=["billing"])
+        )
+    )
+    billing_ids = {h.chunk.id for h in out_billing.result.hits}
+    assert "bill0#0" in billing_ids, "billing chunk should be included for tags=['billing']"
+    assert "auth0#0" not in billing_ids, "auth/jwt chunk must be excluded for tags=['billing']"

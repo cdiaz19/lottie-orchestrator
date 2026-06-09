@@ -28,7 +28,7 @@ vector store only through this skill.
 | k | int | 5 | Maximum number of hits to return |
 | layers | list[KnowledgeLayer] | [] | Layer allowlist; empty = no filter |
 | tags | list[str] | [] | Tag intersection filter; empty = no filter |
-| expand_graph | bool | False | Reserved for graph expansion (Task 10+); ignored here |
+| expand_graph | bool | False | Reserved for graph expansion (Task 13 hybrid retrieval); ignored here |
 
 ## Output
 
