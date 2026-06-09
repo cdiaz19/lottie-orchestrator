@@ -200,3 +200,30 @@ def test_create_agent_from_desc(
     agent_py = (demo / "agents" / "greeter" / "agent.py").read_text()
     assert "class GreeterAgent(BaseAgent" in agent_py
     assert "who: str" in (demo / "agents" / "greeter" / "schema.py").read_text()
+
+
+_DESC_SKILL_PLAN = {
+    "class_name": "ShoutSkill",
+    "input_fields": [{"name": "text", "type": "str", "description": "in"}],
+    "output_fields": [{"name": "result", "type": "str", "description": "out"}],
+    "system_prompt": "",
+    "run_body": "return ShoutSkillOutput(result=data.text.upper())",
+    "tools": [],
+}
+
+
+def test_create_skill_from_desc(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    demo = _init_demo(tmp_path)
+    monkeypatch.chdir(demo)
+    fake_llm = MockLLMProvider([json.dumps(_DESC_SKILL_PLAN)])
+    with patch("lottie.cli.create.build_provider", return_value=fake_llm):
+        result = runner.invoke(
+            app, ["create", "skill", "shout", "--from-desc", "uppercases text"]
+        )
+    assert result.exit_code == 0, result.output
+    skill_py = (demo / "skills" / "shout" / "skill.py").read_text()
+    assert "class ShoutSkill(BaseSkill" in skill_py
+    assert "text: str" in (demo / "skills" / "shout" / "schema.py").read_text()
