@@ -2,32 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import BaseModel
 
 from lottie.knowledge.chunking import ChunkConfig
-from lottie.knowledge.schema import Document, KnowledgeLayer
-
-
-class IngestSource(BaseModel):
-    """A single source of content to ingest into the knowledge layer.
-
-    Parameters
-    ----------
-    kind:
-        ``"text"`` — raw string content; ``"file"`` — path on disk;
-        ``"url"`` — remote URL (deferred, raises ``NotImplementedError``).
-    value:
-        The source payload: the raw text, a file path, or a URL.
-    layer:
-        Requested *eventual* layer after human promotion. Phase 1 always
-        writes to ``KnowledgeLayer.DRAFT`` regardless of this value.
-    """
-
-    kind: Literal["file", "text", "url"]
-    value: str
-    layer: KnowledgeLayer = KnowledgeLayer.DRAFT
+from lottie.knowledge.ingest import IngestSource as IngestSource  # re-export
+from lottie.knowledge.schema import Document  # noqa: F401
+from lottie.knowledge.schema import KnowledgeLayer as KnowledgeLayer
 
 
 class DocumentIngestInput(BaseModel):
@@ -43,4 +23,10 @@ class DocumentIngestOutput(BaseModel):
     documents: list[Document] = []
     chunk_count: int = 0
     flagged: list[str] = []
-    """Identifiers of sources rejected by the security gate."""
+    """Draft IDs (with ``draft/`` prefix) of sources rejected by the security gate."""
+    errors: list[str] = []
+    """Load/processing failures (bad path, URL not implemented, empty content, etc.).
+    Each entry is a string of the form ``"<source identifier>: <reason>"``.
+    These are distinct from ``flagged`` (security rejections) — no security gate was
+    reached for errored sources.
+    """

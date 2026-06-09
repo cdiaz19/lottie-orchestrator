@@ -16,7 +16,13 @@ from pathlib import Path
 from lottie.core import BaseSkill
 from lottie.knowledge.chunking import chunk_document
 from lottie.knowledge.embeddings import EmbeddingProvider
-from lottie.knowledge.ingest import draft_filename, load_source, make_draft_id
+from lottie.knowledge.ingest import (
+    IngestSource,
+    _today_iso,
+    draft_filename,
+    load_source,
+    make_draft_id,
+)
 from lottie.knowledge.schema import DocStatus, Document, EmbeddedChunk, KnowledgeLayer
 from lottie.knowledge.store import VectorStore
 from lottie.security import (
@@ -67,6 +73,9 @@ class DocumentIngestSkill(BaseSkill[DocumentIngestInput, DocumentIngestOutput]):
         self._embedder = embedder
         self._store = store
         self._root = root
+        # Instantiate scanners once (M1) — not per-source.
+        self._injection_scanner = PromptInjectionScanSkill(enable_benchmarks=False)
+        self._secret_detector = SecretDetectionSkill(enable_benchmarks=False)
 
     # ------------------------------------------------------------------
     # Internal gate helpers
@@ -74,8 +83,9 @@ class DocumentIngestSkill(BaseSkill[DocumentIngestInput, DocumentIngestOutput]):
 
     def _injection_flagged(self, text: str, source_label: str) -> bool:
         """Return True if *text* contains prompt-injection markers."""
-        scanner = PromptInjectionScanSkill(enable_benchmarks=False)
-        result = scanner.run(InjectionScanInput(content=text, source=source_label))
+        result = self._injection_scanner.run(
+            InjectionScanInput(content=text, source=source_label)
+        )
         return result.flagged
 
     def _secret_flagged(self, text: str) -> bool:
@@ -83,19 +93,20 @@ class DocumentIngestSkill(BaseSkill[DocumentIngestInput, DocumentIngestOutput]):
 
         ``SecretDetectionSkill`` operates on file paths, so we write *text* to
         a named temporary file, scan it, and delete the file immediately.
+        The temp-file path is captured as the first statement inside the
+        ``with`` block so the ``finally`` branch always has a defined path.
         """
-        detector = SecretDetectionSkill(enable_benchmarks=False)
         with tempfile.NamedTemporaryFile(
             mode="w",
             suffix=".txt",
             encoding="utf-8",
             delete=False,
         ) as tmp:
+            tmp_path = tmp.name  # captured before write (I2)
             tmp.write(text)
-            tmp_path = tmp.name
 
         try:
-            result = detector.run(ScanInput(paths=[tmp_path]))
+            result = self._secret_detector.run(ScanInput(paths=[tmp_path]))
         finally:
             Path(tmp_path).unlink(missing_ok=True)
 
@@ -111,7 +122,11 @@ class DocumentIngestSkill(BaseSkill[DocumentIngestInput, DocumentIngestOutput]):
         text: str,
         target_layer: KnowledgeLayer,
     ) -> None:
-        """Write a YAML-frontmatter markdown file under ``knowledge/draft/``."""
+        """Write a YAML-frontmatter markdown file under ``knowledge/draft/``.
+
+        Rule 14 fields included: id, layer, scope, status, target_layer,
+        tags, depends_on, last_verified.
+        """
         draft_dir = self._root / "knowledge" / "draft"
         draft_dir.mkdir(parents=True, exist_ok=True)
 
@@ -122,13 +137,24 @@ class DocumentIngestSkill(BaseSkill[DocumentIngestInput, DocumentIngestOutput]):
             "---\n"
             f"id: {draft_id}\n"
             "layer: draft\n"
+            "scope: draft\n"                          # I1 — added
             "status: draft\n"
             f"target_layer: {target_layer.value}\n"
             "tags: []\n"
             "depends_on: []\n"
+            f"last_verified: {_today_iso()}\n"        # I1 — added
             "---\n"
         )
         dest.write_text(frontmatter + "\n" + text, encoding="utf-8")
+
+    # ------------------------------------------------------------------
+    # Source identifier helper
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _source_identifier(source: IngestSource, draft_id: str) -> str:
+        """Return a human-readable label for error / injection messages."""
+        return source.value if source.kind == "file" else f"text:{draft_id}"
 
     # ------------------------------------------------------------------
     # Core execution
@@ -138,58 +164,72 @@ class DocumentIngestSkill(BaseSkill[DocumentIngestInput, DocumentIngestOutput]):
         """Process each source through the security gate, then chunk + embed + store."""
         documents: list[Document] = []
         flagged: list[str] = []
+        errors: list[str] = []
         chunk_count = 0
 
         for source in data.sources:
-            # 1. Load raw text.
-            text = load_source(source)
+            # Derive a preliminary source label for error messages (before draft_id
+            # is known).
+            raw_label = source.value if source.kind == "file" else f"<{source.kind}>"
 
-            # 2. Derive a deterministic id for this source.
-            draft_id = make_draft_id(source)
+            try:
+                # 1. Load raw text.
+                text = load_source(source)
 
-            # Choose a human-readable source label for the injection scanner.
-            source_label = (
-                source.value if source.kind == "file" else f"text:{draft_id}"
-            )
+                # 2. Skip empty / whitespace-only content (M3).
+                if not text.strip():
+                    errors.append(f"{raw_label}: empty content")
+                    continue
 
-            # 3. Security gate (CLAUDE.md rule 10 — both scans, no exceptions).
-            if self._injection_flagged(text, source_label):
-                flagged.append(draft_id)
+                # 3. Derive a deterministic id for this source (M2 — content-hash).
+                draft_id = make_draft_id(source, text)
+
+                # Choose a human-readable source label for the injection scanner.
+                source_label = self._source_identifier(source, draft_id)
+
+                # 4. Security gate (CLAUDE.md rule 10 — both scans, no exceptions).
+                if self._injection_flagged(text, source_label):
+                    flagged.append(draft_id)
+                    continue
+
+                if self._secret_flagged(text):
+                    flagged.append(draft_id)
+                    continue
+
+                # 5. Build Document (always DRAFT — rule 12).
+                doc = Document(
+                    id=draft_id,
+                    source=source_label,
+                    layer=KnowledgeLayer.DRAFT,
+                    content=text,
+                    status=DocStatus.DRAFT,
+                    frontmatter={"target_layer": source.layer.value},
+                )
+
+                # 6. Write draft file (rule 12 — write only to knowledge/draft/).
+                self._write_draft(draft_id, text, source.layer)
+
+                # 7. Chunk → embed → store.
+                chunks = chunk_document(doc, data.config)
+                if chunks:
+                    texts = [c.text for c in chunks]
+                    embeddings = self._embedder.embed(texts)
+                    embedded = [
+                        EmbeddedChunk(chunk=chunk, embedding=emb)
+                        for chunk, emb in zip(chunks, embeddings, strict=True)
+                    ]
+                    self._store.add(embedded)
+                    chunk_count += len(chunks)
+
+                documents.append(doc)
+
+            except Exception as exc:  # I3 — per-source error isolation
+                errors.append(f"{raw_label}: {exc}")
                 continue
-
-            if self._secret_flagged(text):
-                flagged.append(draft_id)
-                continue
-
-            # 4. Build Document (always DRAFT — rule 12).
-            doc = Document(
-                id=draft_id,
-                source=source_label,
-                layer=KnowledgeLayer.DRAFT,
-                content=text,
-                status=DocStatus.DRAFT,
-                frontmatter={"target_layer": source.layer.value},
-            )
-
-            # 5. Write draft file (rule 12 — write only to knowledge/draft/).
-            self._write_draft(draft_id, text, source.layer)
-
-            # 6. Chunk → embed → store.
-            chunks = chunk_document(doc, data.config)
-            if chunks:
-                texts = [c.text for c in chunks]
-                embeddings = self._embedder.embed(texts)
-                embedded = [
-                    EmbeddedChunk(chunk=chunk, embedding=emb)
-                    for chunk, emb in zip(chunks, embeddings, strict=True)
-                ]
-                self._store.add(embedded)
-                chunk_count += len(chunks)
-
-            documents.append(doc)
 
         return DocumentIngestOutput(
             documents=documents,
             chunk_count=chunk_count,
             flagged=flagged,
+            errors=errors,
         )
