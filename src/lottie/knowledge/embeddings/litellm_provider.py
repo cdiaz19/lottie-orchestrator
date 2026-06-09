@@ -59,58 +59,65 @@ class LiteLLMEmbeddingProvider(EmbeddingProvider):
 
         # response.data is typed as List (unparameterised) in litellm stubs;
         # mypy accepts it as list[object] implicitly.
-        raw_items: list[object] = list(response.data)
+        data: list[object] = list(response.data)
+
+        # Guard against silent text↔vector misalignment: litellm must return
+        # exactly one embedding per input string.
+        if len(data) != len(texts):
+            raise ValueError(
+                f"litellm returned {len(data)} embeddings for {len(texts)} inputs"
+            )
 
         # Sort by "index" to restore input order when items arrive shuffled.
-        raw_items.sort(key=_item_index)
+        # The enumerate position is passed as the fallback so that items with
+        # unparseable index values preserve their original relative order.
+        indexed: list[tuple[int, object]] = list(enumerate(data))
+        indexed.sort(key=lambda t: _item_index(t[1], t[0]))
 
         embeddings: list[Embedding] = []
-        for item in raw_items:
+        for _, item in indexed:
             vector = _extract_vector(item)
             embeddings.append(Embedding(vector=vector, model=self._model, dim=len(vector)))
         return embeddings
 
 
-def _item_index(item: object) -> int:
+def _item_index(item: object, position: int) -> int:
     """Extract the ``'index'`` field from a litellm embedding data item.
 
     litellm guarantees items arrive in input order but carries an explicit
     ``"index"`` field for safety.  We extract it tolerantly so both dict-like
     and attribute-style objects work.
+
+    *position* is the item's enumerate position in ``response.data``; it is
+    returned as a fallback whenever the ``"index"`` field is absent or cannot
+    be parsed as an integer.  This ensures ``sort`` is total and never raises.
     """
     try:
         return int(item["index"])  # type: ignore[index]  # dict-like access on opaque object
-    except (TypeError, KeyError):
+    except (TypeError, KeyError, ValueError):
         pass
     try:
-        return int(getattr(item, "index", 0))
+        return int(getattr(item, "index", position))
     except (TypeError, ValueError):
-        return 0
+        return position
 
 
 def _extract_vector(item: object) -> list[float]:
     """Pull the float vector from a litellm embedding data item.
 
     litellm may return Pydantic-model objects, ``SimpleNamespace``-like
-    objects, or plain dicts depending on version and backend.  We try the
-    three most common access patterns in order of reliability.
+    objects, or plain dicts depending on version and backend.  We try two
+    access patterns in order of reliability.
     """
-    # 1. dict-style subscript (most common for plain dicts / dict-like objects)
+    # 1. dict-style subscript (most common: plain dicts / dict-like objects)
     try:
         return list(item["embedding"])  # type: ignore[index]  # dict-like access on opaque object
     except (TypeError, KeyError):
         pass
 
-    # 2. .get() for MutableMapping subclasses
-    get_fn = getattr(item, "get", None)
-    if get_fn is not None:
-        val = get_fn("embedding")
-        if val is not None:
-            return list(val)
+    # 2. Attribute access (Pydantic model or SimpleNamespace)
+    vector = getattr(item, "embedding", None)
+    if vector is not None:
+        return list(vector)
 
-    # 3. Attribute access (Pydantic model or SimpleNamespace)
-    vec = getattr(item, "embedding", None)
-    if vec is not None:
-        return list(vec)
-
-    raise ValueError(f"Cannot extract 'embedding' from litellm response item: {item!r}")
+    raise ValueError(f"litellm embedding item missing 'embedding' field: {item!r}")

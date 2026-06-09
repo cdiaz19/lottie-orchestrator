@@ -34,7 +34,7 @@ _STUB_VECTORS = [
 class _FakeEmbeddingResponse:
     """Mimics the shape of a litellm embedding response (OpenAI-style)."""
 
-    def __init__(self, data: list[dict[str, Any]]) -> None:
+    def __init__(self, data: list[Any]) -> None:
         self.data = data
 
 
@@ -190,6 +190,74 @@ class TestLiteLLMEmbeddingProviderIndexSort:
         assert results[0].vector == pytest.approx(_STUB_VECTORS[0])
         assert results[1].vector == pytest.approx(_STUB_VECTORS[1])
         assert results[2].vector == pytest.approx(_STUB_VECTORS[2])
+
+
+class TestLiteLLMEmbeddingProviderCountGuard:
+    """embed() raises ValueError when litellm returns wrong number of embeddings."""
+
+    def test_fewer_embeddings_than_inputs_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Fake returns 2 items for 3 inputs → ValueError with count info."""
+
+        def fake_short(model: str, input: list[str], **kwargs: Any) -> _FakeEmbeddingResponse:  # noqa: A002
+            # Deliberately return one fewer item than requested
+            data = [
+                {"embedding": list(_STUB_VECTORS[i % len(_STUB_VECTORS)]), "index": i}
+                for i in range(len(input) - 1)
+            ]
+            return _FakeEmbeddingResponse(data)
+
+        monkeypatch.setattr("litellm.embedding", fake_short)
+        provider = LiteLLMEmbeddingProvider()
+        with pytest.raises(ValueError, match="litellm returned 2 embeddings for 3 inputs"):
+            provider.embed(["a", "b", "c"])
+
+
+class TestLiteLLMEmbeddingProviderExtractVector:
+    """_extract_vector raises ValueError when neither dict nor attribute access works."""
+
+    def test_item_with_no_embedding_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Fake item exposes neither ['embedding'] nor .embedding → ValueError."""
+
+        class _BadItem:
+            index: int = 0
+            # intentionally no 'embedding' field
+
+        def fake_bad(model: str, input: list[str], **kwargs: Any) -> _FakeEmbeddingResponse:  # noqa: A002
+            # _BadItem has no 'embedding' field; exercises the error path.
+            return _FakeEmbeddingResponse([_BadItem()])
+
+        monkeypatch.setattr("litellm.embedding", fake_bad)
+        provider = LiteLLMEmbeddingProvider()
+        with pytest.raises(ValueError, match="missing 'embedding' field"):
+            provider.embed(["x"])
+
+
+class TestLiteLLMEmbeddingProviderNonNumericIndex:
+    """_item_index is total: non-numeric 'index' field preserves order without raising."""
+
+    def test_non_numeric_index_returns_results(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Fake returns items with a non-numeric string 'index' → embed() succeeds."""
+
+        def fake_bad_index(model: str, input: list[str], **kwargs: Any) -> _FakeEmbeddingResponse:  # noqa: A002
+            data = [
+                {"embedding": list(_STUB_VECTORS[i % len(_STUB_VECTORS)]), "index": "bad"}
+                for i in range(len(input))
+            ]
+            return _FakeEmbeddingResponse(data)
+
+        monkeypatch.setattr("litellm.embedding", fake_bad_index)
+        provider = LiteLLMEmbeddingProvider()
+        # Must not raise; order should be sane (length matches inputs)
+        results = provider.embed(["a", "b"])
+        assert len(results) == 2
+        for emb in results:
+            assert emb.dim == len(emb.vector)
 
 
 class TestLiteLLMEmbeddingProviderErrorPropagation:
