@@ -158,3 +158,78 @@ def test_to_document_frontmatter_dict_contains_all_raw_keys() -> None:
     assert doc.frontmatter["id"] == "lottie/auth-conventions"
     assert "layer" in doc.frontmatter
     assert "tags" in doc.frontmatter
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for code-review fixes
+# ---------------------------------------------------------------------------
+
+
+# Fix 1: public DocStatus idiom — valid and invalid values both handled
+def test_status_valid_value_via_public_idiom() -> None:
+    """DocStatus constructed via public DocStatus(raw) idiom; valid values resolve."""
+    text = "---\nstatus: curated\n---\nbody\n"
+    path = Path("knowledge/global/foo.md")
+    doc = to_document(path, KnowledgeLayer.GLOBAL, text)
+    assert doc.status == DocStatus.CURATED
+
+
+def test_status_invalid_value_falls_back_to_draft_public_idiom() -> None:
+    """DocStatus fallback uses public try/except idiom, not private _value2member_map_."""
+    text = "---\nstatus: not-a-real-status\n---\nbody\n"
+    path = Path("knowledge/global/foo.md")
+    doc = to_document(path, KnowledgeLayer.GLOBAL, text)
+    assert doc.status == DocStatus.DRAFT
+
+
+# Fix 2: CRLF line endings
+def test_parse_frontmatter_crlf_line_endings() -> None:
+    """Frontmatter authored with CRLF line endings parses correctly; not silently dropped."""
+    crlf_text = (
+        "---\r\n"
+        "id: lottie/auth-conventions\r\n"
+        "tags: [auth, jwt, sessions]\r\n"
+        "---\r\n"
+        "Body here\r\n"
+    )
+    meta, body = parse_frontmatter(crlf_text)
+    assert meta.get("id") == "lottie/auth-conventions"
+    assert meta.get("tags") == ["auth", "jwt", "sessions"]
+    assert "Body here" in body
+
+
+# Fix 3: greedy newline strip — only one leading newline removed
+def test_parse_frontmatter_preserves_extra_leading_blank_lines_in_body() -> None:
+    """Body starting with extra blank lines after closing fence keeps all but one newline.
+
+    Input has three newlines after closing fence (---\\n\\n\\nText).
+    Body before strip is '\\n\\nText...'; after removeprefix one '\\n' the
+    result is '\\nText...' — the extra blank line is preserved.
+    """
+    text = "---\nid: x\n---\n\n\nText with leading blanks"
+    _, body = parse_frontmatter(text)
+    # One separator newline removed; one extra blank line (\n) remains before Text
+    assert body.startswith("\nText with leading blanks")
+
+
+# Fix 4: id: null treated as missing — falls back to path.stem
+def test_to_document_null_id_falls_back_to_stem() -> None:
+    """When frontmatter has `id: null`, doc.id should equal path.stem, not 'None'."""
+    text = "---\nid: null\n---\nbody\n"
+    path = Path("knowledge/global/myfile.md")
+    doc = to_document(path, KnowledgeLayer.GLOBAL, text)
+    assert doc.id == "myfile"
+    assert doc.id != "None"
+
+
+# Fix 5: orphan fixture — read from disk and parse
+def test_fixture_file_on_disk_parses_correctly() -> None:
+    """The on-disk fixture sample.md parses to the expected id and status."""
+    repo_root = Path(__file__).resolve().parents[4]
+    fixture_path = repo_root / "tests" / "fixtures" / "knowledge" / "global" / "sample.md"
+    raw = fixture_path.read_text()
+    meta, _ = parse_frontmatter(raw)
+    assert meta["id"] == "lottie/auth-conventions"
+    path = Path("tests/fixtures/knowledge/global/sample.md")
+    doc = to_document(path, KnowledgeLayer.GLOBAL, raw)
+    assert doc.status == DocStatus.CURATED

@@ -35,6 +35,9 @@ def parse_frontmatter(text: str) -> tuple[dict[str, object], str]:
         after the closing fence with any leading newline stripped.  The
         function **never raises**.
     """
+    # Normalize CRLF to LF so Windows-authored files parse correctly.
+    text = text.replace("\r\n", "\n")
+
     if not text.startswith("---"):
         return {}, text
 
@@ -64,8 +67,8 @@ def parse_frontmatter(text: str) -> tuple[dict[str, object], str]:
     yaml_text = "\n".join(lines[:close_index])
     body_lines = lines[close_index + 1 :]
     body = "\n".join(body_lines)
-    # Strip a single leading newline that separates fence from content.
-    body = body.lstrip("\n")
+    # Strip exactly one leading newline that separates fence from content.
+    body = body.removeprefix("\n")
 
     # Parse YAML safely — treat any exception or non-dict result as empty.
     try:
@@ -105,7 +108,7 @@ def to_document(path: Path, layer: KnowledgeLayer, raw: str) -> Document:
     meta, body = parse_frontmatter(raw)
 
     # --- id ---
-    doc_id = str(meta["id"]) if "id" in meta else path.stem
+    doc_id = str(meta["id"]) if meta.get("id") is not None else path.stem
 
     # --- tags ---
     raw_tags = meta.get("tags")
@@ -120,8 +123,11 @@ def to_document(path: Path, layer: KnowledgeLayer, raw: str) -> Document:
     # --- status ---
     raw_status = meta.get("status")
     status: DocStatus
-    if isinstance(raw_status, str) and raw_status in DocStatus._value2member_map_:
-        status = DocStatus(raw_status)
+    if isinstance(raw_status, str):
+        try:
+            status = DocStatus(raw_status)
+        except ValueError:
+            status = DocStatus.DRAFT
     else:
         status = DocStatus.DRAFT
 
