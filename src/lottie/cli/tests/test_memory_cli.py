@@ -7,6 +7,7 @@ runtime agent memory subsystem in ``lottie.memory``.  All tests use
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -169,14 +170,22 @@ def test_audit_cycle_output_mentions_cycle(tmp_path: Path) -> None:
 
 
 def test_audit_stale_doc_reported(tmp_path: Path) -> None:
-    """audit reports a doc with last_verified in 2020 as stale (always > 90 days ago)."""
+    """audit reports a doc with last_verified in 2020 as stale (always > 90 days ago).
+
+    The fresh doc uses today's date so it is always 0 days old and never stale,
+    regardless of when the suite runs.
+    """
+    today = datetime.now(UTC).date().isoformat()
     _write(tmp_path, "global", "doc/old", last_verified="2020-01-01")
-    _write(tmp_path, "global", "doc/fresh", last_verified="2026-05-01")
+    _write(tmp_path, "global", "doc/fresh", last_verified=today)
 
     result = _memory(tmp_path, "audit")
     assert result.exit_code == 0, result.output
     assert "doc/old" in result.output
     assert "stale" in result.output.lower()
+    # doc/fresh must NOT appear in the stale section (it may appear as an orphan)
+    stale_section = result.output.lower().split("stale", maxsplit=1)[-1]
+    assert "doc/fresh" not in stale_section
 
 
 def test_audit_stale_days_custom(tmp_path: Path) -> None:
