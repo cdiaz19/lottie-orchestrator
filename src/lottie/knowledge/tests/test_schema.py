@@ -26,11 +26,11 @@ def test_retrieval_hit_carries_score() -> None:
 
 
 def test_knowledge_layer_enum_values() -> None:
-    assert KnowledgeLayer.GLOBAL == "global"
-    assert KnowledgeLayer.PLATFORM == "platform"
-    assert KnowledgeLayer.PROJECT == "project"
-    assert KnowledgeLayer.MEMORY == "memory"
-    assert KnowledgeLayer.DRAFT == "draft"
+    assert KnowledgeLayer.GLOBAL.value == "global"
+    assert KnowledgeLayer.PLATFORM.value == "platform"
+    assert KnowledgeLayer.PROJECT.value == "project"
+    assert KnowledgeLayer.MEMORY.value == "memory"
+    assert KnowledgeLayer.DRAFT.value == "draft"
 
 
 def test_retrieval_query_defaults() -> None:

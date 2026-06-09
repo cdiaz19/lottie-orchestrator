@@ -73,10 +73,10 @@ class KnowledgeManifest:
     # Queries
     # ------------------------------------------------------------------
 
-    def by_id(self, id: str) -> Document | None:
-        """Return the first document whose :attr:`~Document.id` equals *id*, or ``None``."""
+    def by_id(self, doc_id: str) -> Document | None:
+        """Return the first document whose :attr:`~Document.id` equals *doc_id*, or ``None``."""
         for doc in self.documents:
-            if doc.id == id:
+            if doc.id == doc_id:
                 return doc
         return None
 

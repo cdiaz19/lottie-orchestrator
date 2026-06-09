@@ -19,6 +19,7 @@ from lottie.knowledge.schema import KnowledgeLayer
 # parents[4] = repo root
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _FIXTURES_ROOT = _REPO_ROOT / "tests" / "fixtures"
+assert (_FIXTURES_ROOT / "knowledge").is_dir(), f"fixture root not found: {_FIXTURES_ROOT}"
 
 
 # ---------------------------------------------------------------------------
@@ -54,9 +55,27 @@ def test_from_root_by_id_unknown_returns_none() -> None:
     assert m.by_id("nope") is None
 
 
-def test_from_root_by_layer_memory_empty() -> None:
-    """by_layer for a layer with no fixture files returns an empty list."""
+def test_from_root_directory_is_authoritative_over_frontmatter_layer() -> None:
+    """Directory wins over the frontmatter layer: field.
+
+    The fixture sample.md declares ``layer: platform`` in its frontmatter but
+    lives under ``knowledge/global/``.  The loader must assign GLOBAL, not PLATFORM.
+    """
     m = KnowledgeManifest.from_root(_FIXTURES_ROOT)
+    doc = m.by_id("lottie/auth-conventions")
+    assert doc is not None
+    assert doc.layer == KnowledgeLayer.GLOBAL, (
+        f"expected GLOBAL (directory wins) but got {doc.layer!r}"
+    )
+
+
+def test_from_root_by_layer_memory_empty(tmp_path: Path) -> None:
+    """by_layer for a layer with no files in that layer returns an empty list."""
+    global_dir = tmp_path / "knowledge" / "global"
+    global_dir.mkdir(parents=True)
+    (global_dir / "x.md").write_text("---\nid: g/x\n---\nbody\n", encoding="utf-8")
+
+    m = KnowledgeManifest.from_root(tmp_path)
     assert m.by_layer(KnowledgeLayer.MEMORY) == []
 
 
