@@ -55,8 +55,8 @@ class VectorStore(ABC):
         Parameters
         ----------
         embedding:
-            Query vector.  Must have the same dimensionality as the stored
-            chunks, or mismatched candidates are silently skipped.
+            Query vector.  Behavior on dimension mismatch between the query
+            and stored vectors is backend-defined.
         k:
             Maximum number of hits to return.  ``k <= 0`` always returns ``[]``.
         layers:
@@ -67,6 +67,9 @@ class VectorStore(ABC):
             If non-empty, only chunks whose ``metadata["tags"]`` CSV string
             intersects the provided tags are considered.
             ``None`` or ``[]`` disables the filter.
+            Note: backends that store tags as CSV metadata (e.g. Chroma) cannot
+            rely on server-side substring filtering — the ``tags`` filter must
+            be applied client-side after fetching candidates.
 
         Returns
         -------

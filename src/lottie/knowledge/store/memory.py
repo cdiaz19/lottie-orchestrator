@@ -104,6 +104,13 @@ class InMemoryVectorStore(VectorStore):
         """Return the top-*k* chunks by cosine similarity, with optional filters.
 
         See ``VectorStore.query`` for the full contract.
+
+        Dimension mismatch (InMemory-specific):
+            Stored chunks whose embedding dimension differs from the query
+            vector are **silently skipped** (excluded from candidates).  This
+            avoids crashing when a corpus is built incrementally with different
+            embedding models.  Callers can detect silent exclusions by comparing
+            ``count()`` against ``len(hits)``.
         """
         if k <= 0:
             return []
@@ -115,10 +122,11 @@ class InMemoryVectorStore(VectorStore):
         layer_values: set[str] | None = (
             {layer.value for layer in layers} if layers else None
         )
-        # Build required-tag set
+        # Build required-tag set; drop empty/whitespace strings so that
+        # tags=[], tags=[''], and tags=['  '] all collapse to "no filter".
         tag_set: set[str] | None = (
-            set(tags) if tags else None
-        )
+            {t.strip() for t in tags if t.strip()} or None
+        ) if tags is not None else None
 
         scored: list[tuple[float, str, EmbeddedChunk]] = []
 
@@ -129,6 +137,9 @@ class InMemoryVectorStore(VectorStore):
                 continue
 
             # --- layer filter ---
+            # Chunks whose metadata lacks a "layer" key are excluded when a
+            # layer filter is active (metadata.get returns "" which won't
+            # match any KnowledgeLayer value).
             if layer_values is not None:
                 chunk_layer: str = item.chunk.metadata.get("layer", "")
                 if chunk_layer not in layer_values:

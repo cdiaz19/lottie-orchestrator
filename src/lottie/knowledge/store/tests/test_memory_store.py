@@ -267,6 +267,18 @@ class TestTagFilter:
         hits = store.query(_embed("auth"), k=5, tags=["jwt"])
         assert len(hits) == 1
 
+    def test_tag_filter_empty_string_is_no_filter(self) -> None:
+        """tags=[''] must be treated the same as tags=None — no filter applied."""
+        hits_none = self.store.query(_embed("text"), k=10, tags=None)
+        hits_empty_str = self.store.query(_embed("text"), k=10, tags=[""])
+        assert {h.chunk.id for h in hits_empty_str} == {h.chunk.id for h in hits_none}
+
+    def test_tag_filter_whitespace_only_strings_are_no_filter(self) -> None:
+        """tags=['  '] must be treated the same as tags=None — no filter applied."""
+        hits_none = self.store.query(_embed("text"), k=10, tags=None)
+        hits_ws = self.store.query(_embed("text"), k=10, tags=["  "])
+        assert {h.chunk.id for h in hits_ws} == {h.chunk.id for h in hits_none}
+
 
 # ---------------------------------------------------------------------------
 # Combined layer + tag filter
@@ -456,7 +468,7 @@ class TestCosineSimilarity:
         assert hits[0].score == pytest.approx(0.0, abs=1e-9)
 
     def test_zero_norm_candidate_scores_zero(self) -> None:
-        """A zero-vector candidate is assigned score 0.0 and excluded from top-k results."""
+        """A zero-vector candidate is included in results with score 0.0, ranking last."""
         store = InMemoryVectorStore()
         zero_vec = [0.0] * 16
         emb_zero = Embedding(vector=zero_vec, model="mock/embed", dim=16)
@@ -476,10 +488,11 @@ class TestCosineSimilarity:
         # Query with a proper unit vector
         query_emb = Embedding(vector=[1.0] + [0.0] * 15, model="mock/embed", dim=16)
         hits = store.query(query_emb, k=5)
-        # Zero-norm chunk is excluded (score=0 and we chose to skip it)
-        # OR it's included with score 0.0.  Either is valid per spec.
-        # We just assert the store doesn't crash.
+        # The zero-norm chunk is included (not skipped) with score 0.0.
         assert isinstance(hits, list)
+        zero_hits = [h for h in hits if h.chunk.id == "zero"]
+        assert len(zero_hits) == 1
+        assert zero_hits[0].score == pytest.approx(0.0)
 
     def test_zero_query_norm_returns_all_zero_scores(self) -> None:
         """A zero-query vector produces score 0.0 for all candidates (not a crash)."""
