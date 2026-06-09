@@ -14,8 +14,10 @@ Rules you must never break:
 3. run_body is the BODY of _execute only — no def line, no decorators. Statements
    start at column 0; they will be indented for you. It must end by returning a
    <ClassName>Output(...) built from data.
-4. For an agent, run_body MUST call self.complete([...]) building Message objects
-   and reference SYSTEM_PROMPT, then return the Output from response.content.
+4. For an agent, run_body MUST start with `from lottie.llm import Message`, then call
+   self.complete([...]) building Message objects and reference SYSTEM_PROMPT (already
+   imported), then return the Output from response.content. SYSTEM_PROMPT is in scope;
+   Message is NOT, so you must import it inside run_body.
 5. For a skill, run_body must be deterministic — no LLM, no network.
 6. Every field type is one of: str, int, float, bool, list[str].
 7. Keep every line of run_body at or under 100 characters (split long calls across

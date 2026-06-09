@@ -241,8 +241,10 @@ def generate_from_desc(
 
     # Ensure the parent package dir has an __init__.py so mypy can resolve
     # absolute imports like `from agents.greeter.agent import ...` in generated tests.
+    # Track whether we created it so a fully-failed run leaves no trace.
     parent_init = root / parent_dir / "__init__.py"
-    if not parent_init.exists():
+    created_parent_init = not parent_init.exists()
+    if created_parent_init:
         parent_init.touch()
 
     agent = ScaffolderAgent(llm=llm, enable_benchmarks=False)
@@ -258,6 +260,8 @@ def generate_from_desc(
                 files_written=gate.files_written, passed=True, diagnostics=gate.diagnostics
             )
         feedback = _format_feedback(gate)
+    if created_parent_init:
+        parent_init.unlink(missing_ok=True)
     raise typer.BadParameter(
         f"AI generation failed the security/validation gate after retry:\n{feedback}"
     )
