@@ -34,9 +34,11 @@ def _scaffold(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_discover_agents(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     demo = _scaffold(tmp_path, monkeypatch)
     agents = discover_agents(demo)
-    assert [a.name for a in agents] == ["researcher"]
-    assert agents[0].kind == "agent"
-    assert agents[0].provider == "anthropic/claude-sonnet-4-6"
+    # `lottie init` ships a runnable hello agent, so it is always present alongside
+    # any agent the project later creates.
+    assert [a.name for a in agents] == ["hello", "researcher"]
+    assert all(a.kind == "agent" for a in agents)
+    assert all(a.provider == "anthropic/claude-sonnet-4-6" for a in agents)
 
 
 def test_discover_skills(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -9,11 +9,13 @@ from rich.table import Table
 
 from lottie.project.config import find_project_root, load_lottie_config
 from lottie.project.discovery import UnitInfo, discover_agents, discover_skills
+from lottie.project.lottie_md import sync
 
 
 def status() -> None:
     """Show registered agents, skills, knowledge size, and provider config."""
     root = find_project_root()
+    sync(root)
     cfg = load_lottie_config(root)
     console = Console()
     console.print(f"[bold]{cfg.project}[/bold]")

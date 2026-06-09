@@ -1,4 +1,7 @@
+import subprocess
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
@@ -157,3 +160,47 @@ def test_init_rejects_invalid_project_names(
     assert result.exit_code != 0
     # No scaffold leaked outside or below cwd.
     assert not (tmp_path / "lottie.yaml").exists()
+
+
+def test_init_creates_runnable_hello_agent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["init", "demo"]).exit_code == 0
+    base = tmp_path / "demo" / "agents" / "hello"
+    for rel in ["agent.py", "schema.py", "config.yaml", "prompts.py", "AGENT.md",
+                "tests/test_hello.py"]:
+        assert (base / rel).is_file(), f"missing {rel}"
+    assert "class HelloAgent(BaseAgent" in (base / "agent.py").read_text()
+
+
+def test_init_hello_tests_pass(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["init", "demo"]).exit_code == 0
+    demo = tmp_path / "demo"
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", str(demo / "agents" / "hello")],
+        cwd=demo,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_init_hello_runs_end_to_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["init", "demo"]).exit_code == 0
+    monkeypatch.chdir(tmp_path / "demo")
+
+    def fake_completion(model: str, messages: object, **kwargs: object) -> SimpleNamespace:
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="Hello, Ada!"))],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=2),
+        )
+
+    monkeypatch.setattr("litellm.completion", fake_completion)
+    result = runner.invoke(app, ["run", "hello", "--input", '{"name": "Ada"}'])
+    assert result.exit_code == 0, result.output
+    assert "Hello, Ada!" in result.output

@@ -8,6 +8,8 @@ from typing import Annotated
 import typer
 
 from lottie.cli import templates
+from lottie.project.lottie_md import sync
+from lottie.scaffold.hello import HELLO_FILES
 
 
 def init(
@@ -75,3 +77,10 @@ def _scaffold(target: Path, name: str) -> None:
         layer_dir = target / "knowledge" / layer
         layer_dir.mkdir(parents=True, exist_ok=True)
         (layer_dir / ".gitkeep").write_text("", encoding="utf-8")
+
+    hello_dir = target / "agents" / "hello"
+    for relpath, content in HELLO_FILES.items():
+        path = hello_dir / relpath
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    sync(target)
