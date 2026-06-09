@@ -2,8 +2,8 @@
 
 Runs `mypy --strict` then `ruff check` over the given paths as subprocesses and
 reports a single pass/fail plus the combined diagnostics. Used by the code-write
-gate; callers pass project-relative paths and run from the project root so mypy
-resolves package and relative imports.
+gate, which passes absolute paths (cwd-independent); mypy still resolves a generated
+unit's package and relative imports by walking up its __init__.py parents.
 """
 
 from __future__ import annotations

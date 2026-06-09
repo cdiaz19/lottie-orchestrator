@@ -21,6 +21,7 @@ from lottie.scaffold.schema import (
 
 if TYPE_CHECKING:
     from lottie.scaffold.schema import ScaffoldPlan
+    from lottie.security.schema import GateResult
 
 Kind = Literal["agent", "skill"]
 
@@ -267,11 +268,8 @@ def generate_from_desc(
     )
 
 
-def _format_feedback(result: object) -> str:
+def _format_feedback(result: GateResult) -> str:
     """Render a GateResult into prompt-ready repair feedback."""
-    from lottie.security.schema import GateResult
-
-    assert isinstance(result, GateResult)
     lines: list[str] = []
     for f in result.findings:
         lines.append(f"security: {f.kind} at {f.file}:{f.line} — {f.message}")
