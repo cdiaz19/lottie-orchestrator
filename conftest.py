@@ -8,9 +8,36 @@ assertions. Forcing a wide width makes CLI output deterministic everywhere.
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 
 @pytest.fixture(autouse=True)
 def _wide_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("COLUMNS", "200")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_unit_import_state() -> object:
+    """Undo the global import-state mutation that ``lottie run``/``init`` perform.
+
+    ``lottie.project.discovery`` inserts a project root at ``sys.path[0]`` and
+    purges cached ``agents``/``skills`` modules so each CLI invocation imports the
+    right user code. Run against a scaffolded fixture project (whose ``skills/`` is
+    empty), that leaves a foreign root on ``sys.path`` and the real ``skills.*``
+    modules evicted — so a later test that imports a real reference unit
+    (``skills.chunker``, ``agents.research`` …) resolves against the wrong root and
+    errors at setup. Snapshot ``sys.path`` and drop ``agents``/``skills`` modules
+    after every test so the next import re-resolves cleanly from the repo root.
+    """
+    path_before = list(sys.path)
+    yield
+    if sys.path != path_before:
+        sys.path[:] = path_before
+    for name in [
+        m
+        for m in sys.modules
+        if m in {"agents", "skills"} or m.startswith(("agents.", "skills."))
+    ]:
+        del sys.modules[name]
