@@ -51,3 +51,18 @@ class GateResult(BaseModel):
     findings: list[SecurityFinding] = []
     diagnostics: str = ""
     files_written: list[str] = []
+
+
+class InjectionScanInput(BaseModel):
+    """Input for the prompt-injection scanner."""
+
+    content: str
+    source: str = "unknown"  # provenance label — e.g. a file path or URL
+
+
+class InjectionScanOutput(BaseModel):
+    """Output from the prompt-injection scanner."""
+
+    flagged: bool
+    findings: list[SecurityFinding] = []
+    sanitized: str  # content with matched spans replaced by [REDACTED:INJECTION]
