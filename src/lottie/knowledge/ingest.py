@@ -319,7 +319,7 @@ class DocumentIngestSkill(BaseSkill[DocumentIngestInput, DocumentIngestOutput]):
     @staticmethod
     def _source_identifier(source: IngestSource, draft_id: str) -> str:
         """Return a human-readable label for error / injection messages."""
-        return source.value if source.kind == "file" else f"text:{draft_id}"
+        return source.value if source.kind == "file" else f"{source.kind}:{draft_id}"
 
     # ------------------------------------------------------------------
     # Core execution

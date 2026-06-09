@@ -45,8 +45,11 @@ _console = Console()
 # Shared option defaults
 # ---------------------------------------------------------------------------
 
-_DEFAULT_EMBEDDER = os.environ.get("LOTTIE_EMBEDDING_MODEL", "mock/embed")
-_DEFAULT_STORE = os.environ.get("LOTTIE_VECTOR_STORE", "memory")
+# Sentinel: empty string means "resolve from env at runtime" so that
+# monkeypatch.setenv works in tests and env vars are read at call time,
+# not at module import time.
+_EMBEDDER_SENTINEL = ""
+_STORE_SENTINEL = ""
 
 
 # ---------------------------------------------------------------------------
@@ -70,7 +73,7 @@ def ingest(
                 "'openai/text-embedding-3-small'."
             ),
         ),
-    ] = _DEFAULT_EMBEDDER,
+    ] = _EMBEDDER_SENTINEL,
     store: Annotated[
         str,
         typer.Option(
@@ -80,7 +83,7 @@ def ingest(
                 "LOTTIE_VECTOR_STORE env var or 'memory'."
             ),
         ),
-    ] = _DEFAULT_STORE,
+    ] = _STORE_SENTINEL,
     layer: Annotated[
         str,
         typer.Option("--layer", help="Target knowledge layer (default: draft)."),
@@ -107,15 +110,24 @@ def ingest(
         _console.print("[red]Error:[/red] provide at least one of --file, --text, or --url.")
         raise typer.Exit(1)
 
-    # Build provider objects.
-    embedder_provider = build_embedding_provider(embedder)
-    vector_store = build_vector_store(store, root)
+    # Resolve env-var defaults at call time (not import time) so that
+    # monkeypatch.setenv works correctly in tests.
+    effective_embedder = embedder or os.environ.get("LOTTIE_EMBEDDING_MODEL", "mock/embed")
+    effective_store = store or os.environ.get("LOTTIE_VECTOR_STORE", "memory")
 
-    # Convert inputs to IngestSource models.
+    # Validate layer before touching the filesystem or building providers.
     try:
         target_layer = KnowledgeLayer(layer)
     except ValueError as exc:
         _console.print(f"[red]Error:[/red] unknown layer {layer!r}.")
+        raise typer.Exit(1) from exc
+
+    # Build provider objects — wrap in try/except for friendly error messages.
+    try:
+        embedder_provider = build_embedding_provider(effective_embedder)
+        vector_store = build_vector_store(effective_store, root)
+    except (ValueError, ImportError) as exc:
+        _console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1) from exc
 
     sources: list[IngestSource] = []
@@ -249,7 +261,27 @@ def clear_docs(
     to draft; promotion to curated requires human review).  The directory
     itself is NOT removed.
     """
+    # Validate layer against the enum BEFORE touching the filesystem.
+    # This rejects path traversal attempts like --layer "../../etc".
+    try:
+        KnowledgeLayer(layer)
+    except ValueError as exc:
+        _console.print(
+            f"[red]Error:[/red] {layer!r} is not a valid knowledge layer. "
+            f"Valid layers: {', '.join(v.value for v in KnowledgeLayer)}."
+        )
+        raise typer.Exit(1) from exc
+
     layer_dir = root / "knowledge" / layer
+
+    # Defense-in-depth: ensure the resolved path stays inside knowledge/.
+    knowledge_root = root.resolve() / "knowledge"
+    if not layer_dir.resolve().is_relative_to(knowledge_root):
+        _console.print(
+            "[red]Error:[/red] resolved layer path escapes the knowledge directory."
+        )
+        raise typer.Exit(1)
+
     if not layer_dir.is_dir():
         _console.print(f"Removed 0 file(s) from '{layer}'.")
         return

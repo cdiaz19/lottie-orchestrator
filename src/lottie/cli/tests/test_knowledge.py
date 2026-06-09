@@ -7,8 +7,10 @@ directory so tests are fully isolated from the real project knowledge/.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
+import pytest
 from typer._click.testing import Result
 from typer.testing import CliRunner
 
@@ -251,6 +253,114 @@ def test_clear_empty_layer_exits_zero(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # url ingest test (reviewer gap)
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Fix 1: clear path-traversal guard
+# ---------------------------------------------------------------------------
+
+
+def test_clear_invalid_layer_nonzero(tmp_path: Path) -> None:
+    """clear with an invalid --layer exits non-zero and prints a friendly error."""
+    result = _clear(tmp_path, layer="bogus_layer")
+    assert result.exit_code != 0, result.output
+    output_lower = result.output.lower()
+    assert "not a valid knowledge layer" in output_lower or "error" in output_lower
+
+
+def test_clear_path_traversal_nonzero_and_no_files_deleted(tmp_path: Path) -> None:
+    """clear with --layer '../../etc' exits nonzero and does NOT delete files outside root."""
+    # Create a sentinel .md file one level ABOVE tmp_path to detect deletion.
+    sentinel = tmp_path.parent / "_sentinel_test.md"
+    sentinel.write_text("sentinel content", encoding="utf-8")
+    try:
+        result = _clear(tmp_path, layer="../../etc")
+        assert result.exit_code != 0, result.output
+        assert sentinel.exists(), (
+            "Sentinel file outside root was deleted — path traversal succeeded!"
+        )
+    finally:
+        # Clean up sentinel regardless of test outcome.
+        sentinel.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Fix 2: unknown --store prints friendly error
+# ---------------------------------------------------------------------------
+
+
+def test_ingest_unknown_store_nonzero_with_message(tmp_path: Path) -> None:
+    """ingest with an unknown --store exits nonzero and prints a friendly error message."""
+    result = runner.invoke(
+        app,
+        [
+            "knowledge",
+            "ingest",
+            "--text",
+            _SAFE_TEXT,
+            "--store",
+            "bogus",
+            "--embedder",
+            "mock/embed",
+            "--root",
+            str(tmp_path),
+        ],
+    )
+    assert result.exit_code != 0, result.output
+    assert result.output.strip(), "Expected a non-empty error message"
+    output_lower = result.output.lower()
+    assert "bogus" in result.output or "unknown" in output_lower or "error" in output_lower
+
+
+# ---------------------------------------------------------------------------
+# Fix 3: env-var defaults resolved at call time (not import time)
+# ---------------------------------------------------------------------------
+
+
+def test_ingest_store_env_var_resolved_at_runtime(tmp_path: Path) -> None:
+    """LOTTIE_VECTOR_STORE env var is respected even without --store flag."""
+    old = os.environ.pop("LOTTIE_VECTOR_STORE", None)
+    os.environ["LOTTIE_VECTOR_STORE"] = "memory"
+    try:
+        result = runner.invoke(
+            app,
+            [
+                "knowledge",
+                "ingest",
+                "--text",
+                _SAFE_TEXT,
+                "--embedder",
+                "mock/embed",
+                "--root",
+                str(tmp_path),
+                # No --store flag — should pick up from env
+            ],
+        )
+        assert result.exit_code == 0, result.output
+    finally:
+        if old is None:
+            os.environ.pop("LOTTIE_VECTOR_STORE", None)
+        else:
+            os.environ["LOTTIE_VECTOR_STORE"] = old
+
+
+def test_ingest_store_env_var_monkeypatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """LOTTIE_VECTOR_STORE env var set via monkeypatch is respected at runtime."""
+    monkeypatch.setenv("LOTTIE_VECTOR_STORE", "memory")
+    result = runner.invoke(
+        app,
+        [
+            "knowledge",
+            "ingest",
+            "--text",
+            _SAFE_TEXT,
+            "--embedder",
+            "mock/embed",
+            "--root",
+            str(tmp_path),
+        ],
+    )
+    assert result.exit_code == 0, result.output
 
 
 def test_ingest_url_exits_zero_and_reports_error(tmp_path: Path) -> None:
