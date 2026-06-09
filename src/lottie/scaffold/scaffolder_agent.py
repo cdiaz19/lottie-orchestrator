@@ -29,13 +29,16 @@ class ScaffolderAgent(BaseAgent[ScaffoldRequest, ScaffoldPlan]):
 
 
 def _parse_plan(content: str) -> ScaffoldPlan:
-    """Parse the LLM response into a ScaffoldPlan, tolerating ```json fences."""
+    """Parse the LLM response into a ScaffoldPlan.
+
+    Extracts the outermost ``{...}`` object, which tolerates ```json fences,
+    trailing whitespace, and prose before/after the JSON in one step. If no object
+    is present the original text is validated so genuinely-bad output still fails.
+    """
     text = content.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[1] if "\n" in text else ""
-        if text.endswith("```"):
-            text = text[: -len("```")]
-        text = text.strip()
+    first, last = text.find("{"), text.rfind("}")
+    if first != -1 and last > first:
+        text = text[first : last + 1]
     try:
         return ScaffoldPlan.model_validate_json(text)
     except ValueError as exc:

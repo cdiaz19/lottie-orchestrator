@@ -20,6 +20,7 @@ Rules you must never break:
 6. Every field type is one of: str, int, float, bool, list[str].
 7. Keep every line of run_body at or under 100 characters (split long calls across
    lines) so it passes the linter.
+8. input_fields and output_fields must each contain at least one field.
 
 JSON shape:
 {
