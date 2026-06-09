@@ -6,7 +6,6 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "bandit>=1.9.4",
-    "chromadb>=1.5.9",
     "detect-secrets>=1.5.0",
     "jinja2>=3.1.6",
     "langchain-core>=1.4.0",
@@ -20,6 +19,9 @@ dependencies = [
     "ruff>=0.15.14",
     "typer>=0.26.2",
 ]
+
+[project.optional-dependencies]
+chroma = ["chromadb>=1.5.9"]
 
 [project.scripts]
 lottie = "lottie.cli:app"

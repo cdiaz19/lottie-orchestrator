@@ -1218,7 +1218,6 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "bandit" },
-    { name = "chromadb" },
     { name = "detect-secrets" },
     { name = "jinja2" },
     { name = "langchain-core" },
@@ -1229,6 +1228,11 @@ dependencies = [
     { name = "rich" },
     { name = "ruff" },
     { name = "typer" },
+]
+
+[package.optional-dependencies]
+chroma = [
+    { name = "chromadb" },
 ]
 
 [package.dev-dependencies]
@@ -1242,7 +1246,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "bandit", specifier = ">=1.9.4" },
-    { name = "chromadb", specifier = ">=1.5.9" },
+    { name = "chromadb", marker = "extra == 'chroma'", specifier = ">=1.5.9" },
     { name = "detect-secrets", specifier = ">=1.5.0" },
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "langchain-core", specifier = ">=1.4.0" },
@@ -1254,6 +1258,7 @@ requires-dist = [
     { name = "ruff", specifier = ">=0.15.14" },
     { name = "typer", specifier = ">=0.26.2" },
 ]
+provides-extras = ["chroma"]
 
 [package.metadata.requires-dev]
 dev = [
