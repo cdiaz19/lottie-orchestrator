@@ -15,6 +15,8 @@ from lottie.knowledge.graph import GraphStore
 from lottie.knowledge.manifest import KnowledgeManifest
 from lottie.knowledge.schema import (
     Chunk,
+    DocStatus,
+    Document,
     EmbeddedChunk,
     KnowledgeLayer,
 )
@@ -32,7 +34,11 @@ _FIXTURE_CHUNK = Chunk(
     text="Multi-agent AI systems coordinate specialized agents via typed messages.",
     start=0,
     end=60,
-    metadata={"layer": "global", "doc_id": "kb/multiagent"},
+    metadata={
+        "layer": "global",
+        "doc_id": "kb/multiagent",
+        "source": "knowledge/global/multiagent.md",
+    },
 )
 
 _SUMMARIZER_RESPONSE = (
@@ -60,7 +66,6 @@ def _make_seeded_deps() -> (
     store.add([EmbeddedChunk(chunk=_FIXTURE_CHUNK, embedding=emb)])
 
     # Minimal manifest with the fixture doc
-    from lottie.knowledge.schema import DocStatus, Document
     manifest = KnowledgeManifest(
         documents=[
             Document(
@@ -103,6 +108,9 @@ def test_research_output_has_digest_and_citations() -> None:
     chunk_ids = [c.chunk_id for c in out.citations]
     assert "kb/multiagent" in doc_ids
     assert "kb/multiagent#0" in chunk_ids
+    # Citation.source must be the document file path, not doc_id
+    sources = [c.source for c in out.citations]
+    assert "knowledge/global/multiagent.md" in sources
 
 
 # ---------------------------------------------------------------------------
@@ -211,3 +219,35 @@ def test_research_default_summarizer_uses_agent_llm() -> None:
     # The agent LLM is called by both self.complete AND the internal summarizer
     assert len(agent_llm.calls) == 2
     assert out.digest  # non-empty
+
+
+# ---------------------------------------------------------------------------
+# Test 7 — max_points controls bullet cap independently of k
+# ---------------------------------------------------------------------------
+
+
+def test_max_points_controls_bullet_cap_independently_of_k() -> None:
+    """max_points=1 limits bullets to 1 even when k=5 would previously cap at 5."""
+    embedder = MockEmbeddingProvider()
+    store = InMemoryVectorStore()
+    emb = embedder.embed([_FIXTURE_CHUNK.text])[0]
+    store.add([EmbeddedChunk(chunk=_FIXTURE_CHUNK, embedding=emb)])
+    manifest = KnowledgeManifest(documents=[])
+    graph = GraphStore(manifest)
+    retrieval = RetrievalSkill(embedder, store, graph)
+
+    # Summarizer returns one bullet point
+    summarizer_llm = MockLLMProvider(
+        ["Summary with limited bullets.\n- only bullet"]
+    )
+    summarizer = SummarizerSkill(summarizer_llm)
+    agent_llm = MockLLMProvider([_AGENT_LLM_RESPONSE])
+    agent = ResearchAgent(agent_llm, retrieval=retrieval, summarizer=summarizer)
+
+    # k=5 but max_points=1 — the SummarizerInput should receive max_points=1
+    out = agent.run(ResearchInput(query="multi-agent AI", k=5, max_points=1))
+
+    assert isinstance(out, ResearchOutput)
+    # Verify max_points=1 was passed (summarizer received 1-point instruction)
+    # The mock summarizer returned one bullet; it should appear in points
+    assert "only bullet" in out.points

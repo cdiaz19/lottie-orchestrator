@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from lottie.knowledge.schema import KnowledgeLayer
 
@@ -23,6 +23,7 @@ class ResearchInput(BaseModel):
     k: int = 5
     layers: list[KnowledgeLayer] = []
     expand_graph: bool = True
+    max_points: int = Field(default=5, ge=1)
 
 
 class ResearchOutput(BaseModel):

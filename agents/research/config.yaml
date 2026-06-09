@@ -9,4 +9,4 @@ policies:
   - base
 memory:
   enabled: false
-  namespace: research
+  namespace: research  # placeholder — only used when memory.enabled=true (Phase 2)

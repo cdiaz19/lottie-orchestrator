@@ -27,6 +27,7 @@ from skills.summarizer.schema import SummarizerInput
 from skills.summarizer.skill import SummarizerSkill
 
 from lottie.core import BaseAgent
+from lottie.knowledge.schema import RetrievalQuery
 from lottie.llm import LLMProvider, Message
 from lottie.memory.base import MemoryClient
 
@@ -83,8 +84,6 @@ class ResearchAgent(BaseAgent[ResearchInput, ResearchOutput]):
 
     def _execute(self, data: ResearchInput) -> ResearchOutput:
         """Retrieve → ground → complete → summarise → return."""
-        from lottie.knowledge.schema import RetrievalQuery
-
         # 1. Build retrieval query
         rq = RetrievalQuery(
             text=data.query,
@@ -96,7 +95,9 @@ class ResearchAgent(BaseAgent[ResearchInput, ResearchOutput]):
         # 2. Retrieve hits — only through the skill, never the store directly
         hits = self._retrieval.run(RetrievalSkillInput(query=rq)).result.hits
 
-        # 3. Build grounded numbered context
+        # 3. Build grounded numbered context.
+        # Retrieved chunk text was already scanned by PromptInjectionScanSkill
+        # at ingest time (CLAUDE.md rule 10) — no re-scan needed here.
         if hits:
             context_lines: list[str] = []
             for i, hit in enumerate(hits, start=1):
@@ -121,7 +122,7 @@ class ResearchAgent(BaseAgent[ResearchInput, ResearchOutput]):
 
         # 5. Summarise LLM response into digest + bullets
         summ = self._summarizer.run(
-            SummarizerInput(text=response.content, max_points=data.k)
+            SummarizerInput(text=response.content, max_points=data.max_points)
         )
 
         # 6. Build citations
@@ -130,7 +131,7 @@ class ResearchAgent(BaseAgent[ResearchInput, ResearchOutput]):
                 doc_id=h.chunk.doc_id,
                 chunk_id=h.chunk.id,
                 score=h.score,
-                source=h.chunk.metadata.get("doc_id", h.chunk.doc_id),
+                source=h.chunk.metadata.get("source", h.chunk.doc_id),
             )
             for h in hits
         ]

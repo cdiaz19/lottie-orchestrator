@@ -65,13 +65,14 @@ def test_empty_content() -> None:
 
 
 def test_metadata_on_every_chunk() -> None:
-    """Every chunk carries layer and doc_id in metadata."""
+    """Every chunk carries layer, doc_id, and source in metadata."""
     doc = _doc("a" * 2500)
     chunks = chunk_document(doc, ChunkConfig())
 
     for chunk in chunks:
         assert chunk.metadata["layer"] == "global"
         assert chunk.metadata["doc_id"] == "d"
+        assert chunk.metadata["source"] == "s"  # _doc() sets source="s"
 
 
 def test_single_chunk_short_doc() -> None:

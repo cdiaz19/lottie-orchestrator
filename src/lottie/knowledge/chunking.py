@@ -99,7 +99,7 @@ def chunk_document(doc: Document, cfg: ChunkConfig) -> list[Chunk]:
             text=text[start:end],
             start=start,
             end=end,
-            metadata={"layer": doc.layer.value, "doc_id": doc.id},
+            metadata={"layer": doc.layer.value, "doc_id": doc.id, "source": doc.source},
         )
         chunks.append(chunk)
         idx += 1
