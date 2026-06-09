@@ -1,4 +1,4 @@
-"""Lottie knowledge subsystem — schemas, frontmatter parsing, and manifest loader.
+"""Lottie knowledge subsystem — schemas, frontmatter parsing, manifest loader, and graph store.
 
 Public surface::
 
@@ -13,11 +13,14 @@ Public surface::
         RetrievalQuery,
         RetrievalHit,
         RetrievalResult,
+        GraphStore,
+        build_knowledge_graph,
     )
 """
 
 from __future__ import annotations
 
+from lottie.knowledge.graph import GraphStore, build_knowledge_graph
 from lottie.knowledge.manifest import KnowledgeManifest
 from lottie.knowledge.schema import (
     Chunk,
@@ -42,4 +45,6 @@ __all__ = [
     "RetrievalQuery",
     "RetrievalHit",
     "RetrievalResult",
+    "GraphStore",
+    "build_knowledge_graph",
 ]

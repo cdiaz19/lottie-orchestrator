@@ -13,6 +13,7 @@ dependencies = [
     # mypy + ruff are runtime deps: the rule-13 code-write gate (SchemaValidatorSkill,
     # used by `lottie create --from-desc`) shells out to them, so end users need them.
     "mypy>=2.1.0",
+    "networkx>=3.6.1",
     "pydantic>=2.13.4",
     "pyyaml>=6.0.3",
     "rich>=15.0.0",
@@ -31,6 +32,7 @@ dev = [
     "pytest>=9.0.3",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
+    "types-networkx>=3.6.1.20260518",
     "types-pyyaml>=6.0.12.20260518",
 ]
 
