@@ -22,7 +22,7 @@ Example::
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import networkx as nx  # type stubs provided by types-networkx
 
@@ -149,7 +149,7 @@ class GraphStore:
         days:
             Age threshold in calendar days.
         now:
-            Reference point (default: ``datetime.utcnow()``).  Provide a fixed
+            Reference point (default: ``datetime.now(UTC)``).  Provide a fixed
             value in tests for determinism.
 
         Accepted ``last_verified`` formats
@@ -162,7 +162,7 @@ class GraphStore:
 
         Returns a sorted list.
         """
-        reference: datetime = now if now is not None else datetime.utcnow()
+        reference: datetime = now if now is not None else datetime.now(UTC)
         cutoff = reference - timedelta(days=days)
         stale_ids: list[str] = []
         for node, attrs in self._graph.nodes(data=True):
@@ -191,7 +191,7 @@ def _parse_date(raw: str) -> datetime | None:
     """
     for fmt in ("%Y-%m-%d", "%Y-%m"):
         try:
-            return datetime.strptime(raw, fmt)
+            return datetime.strptime(raw, fmt).replace(tzinfo=UTC)
         except ValueError:
             continue
     return None

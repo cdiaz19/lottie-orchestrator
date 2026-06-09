@@ -5,7 +5,7 @@ All tests use in-memory KnowledgeManifest/Document instances — no filesystem I
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -225,7 +225,7 @@ class TestOrphans:
 
 
 class TestStale:
-    _NOW = datetime(2026, 6, 1)
+    _NOW = datetime(2026, 6, 1, tzinfo=UTC)
 
     def test_old_doc_is_stale(self) -> None:
         m = _manifest(_doc("old", last_verified="2025-01-01"))
