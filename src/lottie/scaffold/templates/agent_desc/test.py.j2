@@ -8,4 +8,4 @@ from agents.{{ name }}.schema import {{ class_name }}Input
 def test_{{ name }}_runs() -> None:
     agent = {{ class_name }}(llm=MockLLMProvider(["mock response"]))
     result = agent.run({{ class_name }}Input({{ input_sample }}))
-    assert result is not None
+    assert result is not None  # nosec B101

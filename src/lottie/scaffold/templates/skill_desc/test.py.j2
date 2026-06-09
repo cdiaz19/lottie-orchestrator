@@ -7,4 +7,4 @@ from skills.{{ name }}.skill import {{ class_name }}
 def test_{{ name }}_runs() -> None:
     skill = {{ class_name }}()
     result = skill.run({{ class_name }}Input({{ input_sample }}))
-    assert result is not None
+    assert result is not None  # nosec B101

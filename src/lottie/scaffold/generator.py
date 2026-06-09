@@ -4,13 +4,23 @@ from __future__ import annotations
 
 import keyword
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import typer
 from jinja2 import TemplateError
 
+from lottie.llm import LLMProvider
 from lottie.scaffold.renderer import TemplateRendererSkill
-from lottie.scaffold.schema import RenderContext, RenderInput
+from lottie.scaffold.schema import (
+    FieldSpec,
+    PlanRenderContext,
+    RenderContext,
+    RenderInput,
+    ScaffoldResult,
+)
+
+if TYPE_CHECKING:
+    from lottie.scaffold.schema import ScaffoldPlan
 
 Kind = Literal["agent", "skill"]
 
@@ -142,3 +152,125 @@ def _update_lottie_md(root: Path, kind: Kind, class_name: str, location: str) ->
     else:
         lines.insert(k, entry)  # prepend above the existing list
     md.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+_AGENT_DESC_PLAN: list[tuple[str, str]] = [
+    ("__init__.py", ""),
+    ("AGENT.md", "agent_desc/AGENT.md.j2"),
+    ("agent.py", "agent_desc/agent.py.j2"),
+    ("schema.py", "agent_desc/schema.py.j2"),
+    ("config.yaml", "agent_desc/config.yaml.j2"),
+    ("prompts.py", "agent_desc/prompts.py.j2"),
+    ("tests/__init__.py", ""),
+    ("tests/test_{name}.py", "agent_desc/test.py.j2"),
+]
+_SKILL_DESC_PLAN: list[tuple[str, str]] = [
+    ("__init__.py", ""),
+    ("SKILL.md", "skill_desc/SKILL.md.j2"),
+    ("skill.py", "skill_desc/skill.py.j2"),
+    ("schema.py", "skill_desc/schema.py.j2"),
+    ("tests/__init__.py", ""),
+    ("tests/test_{name}.py", "skill_desc/test.py.j2"),
+]
+_DESC_PLANS: dict[Kind, list[tuple[str, str]]] = {
+    "agent": _AGENT_DESC_PLAN,
+    "skill": _SKILL_DESC_PLAN,
+}
+
+_SAMPLE: dict[str, str] = {
+    "str": '""',
+    "int": "0",
+    "float": "0.0",
+    "bool": "False",
+    "list[str]": "[]",
+}
+
+
+def _input_sample(fields: list[FieldSpec]) -> str:
+    """A keyword-args string constructing the Input with placeholder values."""
+    return ", ".join(f"{f.name}={_SAMPLE.get(f.type, 'None')}" for f in fields)
+
+
+def _plan_context(kind: Kind, name: str, plan: ScaffoldPlan) -> PlanRenderContext:
+    return PlanRenderContext(
+        name=name,
+        class_name=plan.class_name,
+        provider=RenderContext(name=name, class_name=plan.class_name).provider,
+        kind=kind,
+        input_fields=plan.input_fields,
+        output_fields=plan.output_fields,
+        system_prompt=plan.system_prompt,
+        run_body=plan.run_body,
+        tools=plan.tools,
+        input_sample=_input_sample(plan.input_fields),
+    )
+
+
+def _render_from_plan(kind: Kind, name: str, plan: ScaffoldPlan) -> dict[str, str]:
+    context = _plan_context(kind, name, plan)
+    renderer = TemplateRendererSkill(enable_benchmarks=False)
+    files: dict[str, str] = {}
+    for relpath, template in _DESC_PLANS[kind]:
+        out = relpath.format(name=name)
+        if not template:
+            files[out] = ""
+            continue
+        try:
+            files[out] = renderer.run(RenderInput(template=template, context=context)).content
+        except TemplateError as exc:
+            raise typer.BadParameter(f"failed to render {template}: {exc}") from exc
+    return files
+
+
+def generate_from_desc(
+    kind: Kind, name: str, description: str, llm: LLMProvider
+) -> ScaffoldResult:
+    """AI-scaffold a unit from a description, behind the rule-13 write gate.
+
+    One repair retry: gate diagnostics are fed back to the LLM before giving up.
+    """
+    from lottie.scaffold.scaffolder_agent import ScaffolderAgent
+    from lottie.scaffold.schema import ScaffoldRequest
+    from lottie.security import guard_and_write
+
+    _validate_name(name)
+    root = _project_root()
+    parent_dir, _ = _PLANS[kind]
+    target = root / parent_dir / name
+    _guard(target)
+
+    # Ensure the parent package dir has an __init__.py so mypy can resolve
+    # absolute imports like `from agents.greeter.agent import ...` in generated tests.
+    parent_init = root / parent_dir / "__init__.py"
+    if not parent_init.exists():
+        parent_init.touch()
+
+    agent = ScaffolderAgent(llm=llm, enable_benchmarks=False)
+    request = ScaffoldRequest(kind=kind, name=name, description=description)
+    feedback: str | None = None
+    for _attempt in range(2):
+        plan = agent.run(request.model_copy(update={"repair_feedback": feedback}))
+        files = _render_from_plan(kind, name, plan)
+        gate = guard_and_write(target, files, root)
+        if gate.passed:
+            _update_lottie_md(root, kind, plan.class_name, f"{parent_dir}/{name}/")
+            return ScaffoldResult(
+                files_written=gate.files_written, passed=True, diagnostics=gate.diagnostics
+            )
+        feedback = _format_feedback(gate)
+    raise typer.BadParameter(
+        f"AI generation failed the security/validation gate after retry:\n{feedback}"
+    )
+
+
+def _format_feedback(result: object) -> str:
+    """Render a GateResult into prompt-ready repair feedback."""
+    from lottie.security.schema import GateResult
+
+    assert isinstance(result, GateResult)
+    lines: list[str] = []
+    for f in result.findings:
+        lines.append(f"security: {f.kind} at {f.file}:{f.line} — {f.message}")
+    if result.diagnostics:
+        lines.append(result.diagnostics)
+    return "\n".join(lines) or "unknown gate failure"
