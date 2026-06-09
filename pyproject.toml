@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "bandit>=1.9.4",
+    "chromadb>=1.5.9",
     "detect-secrets>=1.5.0",
     "jinja2>=3.1.6",
     "langchain-core>=1.4.0",
@@ -45,7 +46,7 @@ warn_unreachable = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["detect_secrets.*", "bandit.*"]
+module = ["detect_secrets.*", "bandit.*", "chromadb.*"]
 ignore_missing_imports = true
 
 [tool.ruff]
