@@ -22,8 +22,10 @@ Tag filtering
 Tags are stored as a CSV string (``metadata["tags"]``).  Chroma cannot
 filter on CSV substrings server-side, so tag filtering is applied
 client-side *after* fetching results from Chroma.  When a tag filter is
-active, we fetch ``max(k, count())`` candidates before filtering to
-minimise the chance of under-delivering.
+active, we fetch all candidates (``count()`` total) before filtering to
+minimise the chance of under-delivering.  When no tag filter is active,
+we pass ``n_results=k`` directly — Chroma caps results at collection size
+automatically, so no extra ``count()`` RPC is needed.
 """
 
 from __future__ import annotations
@@ -76,10 +78,32 @@ class ChromaVectorStore(VectorStore):
         self._client: chromadb.api.ClientAPI = chromadb.PersistentClient(
             path=str(persist_dir)
         )
-        self._collection: Any = self._client.get_or_create_collection(
-            name=collection,
+        self._collection: Any = self._open_collection()
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _open_collection(self) -> Any:
+        """Get or create the collection and assert it uses cosine distance.
+
+        ``get_or_create_collection`` silently ignores the ``metadata`` arg
+        when the collection already exists, so a pre-existing collection with
+        a different ``hnsw:space`` (e.g. ``"l2"``) would produce silently wrong
+        similarity scores.  We detect and reject that case early.
+        """
+        coll: Any = self._client.get_or_create_collection(
+            name=self._collection_name,
             metadata={"hnsw:space": "cosine"},
         )
+        actual: str = (coll.metadata or {}).get("hnsw:space", "l2")
+        if actual != "cosine":
+            raise RuntimeError(
+                f"Chroma collection {self._collection_name!r} uses "
+                f"hnsw:space={actual!r}, expected 'cosine'. "
+                "Delete .lottie/chroma to reset."
+            )
+        return coll
 
     # ------------------------------------------------------------------
     # VectorStore interface
@@ -89,6 +113,11 @@ class ChromaVectorStore(VectorStore):
         """Persist *items* to the Chroma collection.
 
         Empty batches are a no-op (Chroma raises on empty ``add``).
+
+        Note on duplicate IDs: re-adding a chunk with an existing id is
+        backend-defined — Chroma keeps the first write (ignores duplicates)
+        while ``InMemoryVectorStore`` appends; callers must ``clear()`` and
+        re-add to update an existing chunk.
         """
         if not items:
             return
@@ -99,6 +128,10 @@ class ChromaVectorStore(VectorStore):
         metadatas: list[dict[str, str]] = []
 
         for item in items:
+            if "_chunk_json" in item.chunk.metadata:
+                raise ValueError(
+                    "chunk.metadata may not use the reserved key '_chunk_json'"
+                )
             ids.append(item.chunk.id)
             embeddings.append(list(item.embedding.vector))
             documents.append(item.chunk.text)
@@ -150,13 +183,17 @@ class ChromaVectorStore(VectorStore):
             tag_set = stripped if stripped else None
 
         # Decide how many candidates to fetch.
-        total: int = self._collection.count()
-        if total == 0:
-            return []
-
-        # Client-side tag filtering may shrink results below k, so fetch
-        # all available candidates when a tag filter is active.
-        fetch_n = min(total, max(k, total)) if tag_set is not None else min(total, k)
+        # When a tag filter is active we overfetch all documents (client-side
+        # filtering may otherwise under-deliver), so we need the count.
+        # When no tag filter is active, pass k directly — Chroma caps
+        # n_results at the collection size automatically, saving an RPC.
+        if tag_set is not None:
+            total: int = self._collection.count()
+            if total == 0:
+                return []
+            fetch_n: int = total  # overfetch all, then client-side filter + truncate to k
+        else:
+            fetch_n = k  # Chroma caps n_results at collection size automatically
 
         query_kwargs: dict[str, object] = {
             "query_embeddings": [list(embedding.vector)],
@@ -203,7 +240,4 @@ class ChromaVectorStore(VectorStore):
         subsequent calls to ``add`` and ``query`` work normally.
         """
         self._client.delete_collection(self._collection_name)
-        self._collection = self._client.get_or_create_collection(
-            name=self._collection_name,
-            metadata={"hnsw:space": "cosine"},
-        )
+        self._collection = self._open_collection()

@@ -12,6 +12,8 @@ never fails on an environment where chromadb isn't installed.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 chromadb = pytest.importorskip("chromadb")  # skip module if chromadb absent
@@ -408,6 +410,70 @@ class TestScores:
         for h in hits:
             # Cosine similarity is in [-1, 1]; allow small floating-point slack
             assert -1.0 - 1e-6 <= h.score <= 1.0 + 1e-6
+
+
+# ---------------------------------------------------------------------------
+# F2 — cosine space verification
+# ---------------------------------------------------------------------------
+
+
+class TestCosineSpaceVerification:
+    """_open_collection() must assert hnsw:space == 'cosine'."""
+
+    def test_normal_construct_yields_cosine_collection(self, tmp_path: Path) -> None:
+        """A freshly created store must have a cosine collection."""
+        store = ChromaVectorStore(tmp_path)
+        assert (store._collection.metadata or {}).get("hnsw:space") == "cosine"
+
+    def test_clear_preserves_cosine_space(self, tmp_path: Path) -> None:
+        """After clear(), the recreated collection must still be cosine."""
+        store = ChromaVectorStore(tmp_path)
+        store.add([make_chunk("a", "apple")])
+        store.clear()
+        assert (store._collection.metadata or {}).get("hnsw:space") == "cosine"
+
+    def test_pre_existing_l2_collection_raises_runtime_error(
+        self, tmp_path: Path
+    ) -> None:
+        """Constructing a ChromaVectorStore against a pre-existing non-cosine
+        collection must raise RuntimeError with a helpful message."""
+        import chromadb as _chromadb
+
+        persist_dir = tmp_path / ".lottie" / "chroma"
+        persist_dir.mkdir(parents=True, exist_ok=True)
+        # Create the collection with l2 space directly via the raw client.
+        raw_client: Any = _chromadb.PersistentClient(path=str(persist_dir))
+        raw_client.create_collection(
+            name="lottie_knowledge",
+            metadata={"hnsw:space": "l2"},
+        )
+
+        with pytest.raises(RuntimeError, match="hnsw:space=.l2."):
+            ChromaVectorStore(tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# F4 — reserved key guard
+# ---------------------------------------------------------------------------
+
+
+class TestReservedKeyGuard:
+    """add() must reject chunk.metadata containing '_chunk_json'."""
+
+    def test_reserved_key_raises_value_error(self, tmp_path: Path) -> None:
+        store = ChromaVectorStore(tmp_path)
+        bad_item = make_chunk("x", "text")
+        # Inject the reserved key directly into the chunk's metadata.
+        bad_item.chunk.metadata["_chunk_json"] = "should not be allowed"
+        with pytest.raises(ValueError, match="reserved key '_chunk_json'"):
+            store.add([bad_item])
+
+    def test_normal_metadata_does_not_raise(self, tmp_path: Path) -> None:
+        """Metadata without the reserved key must be accepted normally."""
+        store = ChromaVectorStore(tmp_path)
+        item = make_chunk("y", "text", tags="safe")
+        store.add([item])  # must not raise
+        assert store.count() == 1
 
 
 # ---------------------------------------------------------------------------
