@@ -11,7 +11,7 @@ Public API::
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from lottie.knowledge.schema import Chunk, Document
 
@@ -22,6 +22,14 @@ class ChunkConfig(BaseModel):
     size: int = 1000
     overlap: int = 200
     separators: list[str] = ["\n\n", "\n", ". ", " ", ""]
+
+    @model_validator(mode="after")
+    def _validate_window(self) -> ChunkConfig:
+        if self.size < 1:
+            raise ValueError("size must be >= 1")
+        if not (0 <= self.overlap < self.size):
+            raise ValueError("overlap must satisfy 0 <= overlap < size")
+        return self
 
 
 def _find_boundary(
@@ -62,7 +70,7 @@ def chunk_document(doc: Document, cfg: ChunkConfig) -> list[Chunk]:
     identical outputs.
     """
     text = doc.content
-    if text == "":
+    if not text:
         return []
 
     chunks: list[Chunk] = []
@@ -75,8 +83,13 @@ def chunk_document(doc: Document, cfg: ChunkConfig) -> list[Chunk]:
 
         if end < n:
             # Not the final chunk — try to snap to a natural boundary.
+            # Only accept the snap if the resulting chunk is substantial (at
+            # least size // 4 characters).  A tiny snap near the window start
+            # would produce a chunk that is a strict subset of the previous
+            # chunk, yielding garbage embeddings downstream.
             snapped = _find_boundary(text, start, end, cfg.separators)
-            if snapped is not None and snapped > start:
+            snap_floor = max(1, cfg.size // 4)
+            if snapped is not None and snapped - start >= snap_floor:
                 end = snapped
 
         chunk = Chunk(

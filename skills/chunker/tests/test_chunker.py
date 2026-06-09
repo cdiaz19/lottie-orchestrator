@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+from pydantic import ValidationError
+
 from lottie.knowledge.chunking import ChunkConfig, chunk_document
 from lottie.knowledge.schema import Document, KnowledgeLayer
 from skills.chunker.schema import ChunkerInput, ChunkerOutput
@@ -38,6 +41,8 @@ def test_determinism_and_offsets() -> None:
     run1 = [(c.id, c.start, c.end) for c in chunks]
     run2 = [(c.id, c.start, c.end) for c in chunk_document(doc, cfg)]
     assert run1 == run2
+    # final chunk ends exactly at content length
+    assert chunks[-1].end == 2500
 
 
 def test_boundary_snapping() -> None:
@@ -148,3 +153,86 @@ def test_skill_empty_doc() -> None:
     result = skill.run(ChunkerInput(document=doc))
 
     assert result.chunks == []
+
+
+# ---------------------------------------------------------------------------
+# ChunkConfig — validation tests (Fix 1)
+# ---------------------------------------------------------------------------
+
+
+def test_chunk_config_size_zero_raises() -> None:
+    """size=0 is invalid — must raise ValidationError."""
+    with pytest.raises(ValidationError):
+        ChunkConfig(size=0)
+
+
+def test_chunk_config_overlap_equals_size_raises() -> None:
+    """overlap == size is invalid (overlap must be < size)."""
+    with pytest.raises(ValidationError):
+        ChunkConfig(size=100, overlap=100)
+
+
+def test_chunk_config_overlap_one_less_than_size_is_valid() -> None:
+    """overlap = size - 1 is the largest legal overlap."""
+    cfg = ChunkConfig(size=100, overlap=99)
+    assert cfg.overlap == 99
+
+
+def test_chunk_config_defaults_are_valid() -> None:
+    """Default ChunkConfig() is valid (size=1000, overlap=200)."""
+    cfg = ChunkConfig()
+    assert cfg.size == 1000
+    assert cfg.overlap == 200
+
+
+# ---------------------------------------------------------------------------
+# No-tiny-snap rule (Fix 2) — regression test
+# ---------------------------------------------------------------------------
+
+
+def test_no_tiny_snap_when_separator_at_window_start() -> None:
+    """Separator at/near window start must NOT produce a tiny chunk.
+
+    content = "\\n\\n" + "x"*5000
+    The separator "\\n\\n" sits at index 0-2 of the SECOND window, which means
+    snapping to index 2 from start=800 gives a chunk of only 2 chars — smaller
+    than the floor (size // 4 = 250).  The algorithm must fall back to a hard
+    cut at start + size instead.
+
+    Asserted properties
+    -------------------
+    - chunks[0].end == 1000  (hard cut; snap suppressed because sep is at very
+      start and 2 - 0 < 250)
+    - No chunk is a strict subset of another chunk's [start, end) range.
+    - Every chunk has at least one character.
+    - Consecutive chunks make forward progress (start strictly increases).
+    """
+    content = "\n\n" + "x" * 5000
+    doc = _doc(content)
+    cfg = ChunkConfig()  # size=1000, overlap=200
+
+    chunks = chunk_document(doc, cfg)
+
+    # Hard cut on chunk[0]: sep "\n\n" is at [0,2) in the window [0,1000),
+    # snapped boundary would be 2, chunk size = 2 - 0 = 2 < floor 250 → suppress.
+    assert chunks[0].end == 1000
+
+    # No chunk is a strict subset of another.
+    for i, ci in enumerate(chunks):
+        for j, cj in enumerate(chunks):
+            if i == j:
+                continue
+            assert not (
+                cj.start <= ci.start and ci.end <= cj.end and ci.start != cj.start
+            ), (
+                f"chunk[{i}] [{ci.start},{ci.end}) is a strict subset of "
+                f"chunk[{j}] [{cj.start},{cj.end})"
+            )
+
+    # Every chunk non-empty.
+    for chunk in chunks:
+        assert len(chunk.text) >= 1
+
+    # Consecutive chunks make forward progress.
+    for i in range(len(chunks) - 1):
+        assert chunks[i + 1].start > chunks[i].start
