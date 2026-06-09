@@ -92,3 +92,29 @@ def test_run_surfaces_agent_error_cleanly(
     result = runner.invoke(app, ["run", "echo", "--input", '{"query": "hi"}'])
     assert result.exit_code != 0
     assert "failed" in result.output
+
+
+def test_run_from_project_failure_surfaces_as_bad_parameter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A from_project failure (e.g. missing knowledge dir) is a typed error, not raw traceback.
+
+    Verifies Fix 2 of Task 18 review: the agent construction call is wrapped in
+    try/except so that any exception from from_project (bad knowledge tree, missing
+    env, broken vector store) reaches the user as a BadParameter message with exit
+    code != 0, never as a raw Python traceback.
+    """
+    _scaffold_agent(tmp_path, monkeypatch)
+
+    # Patch instantiate_agent (the shared helper) to simulate a from_project failure
+    # — e.g. build_vector_store raised because LOTTIE_VECTOR_STORE=bogus.
+    def _boom_instantiate(agent_cls: object, **kwargs: object) -> object:
+        raise ValueError("bogus vector store kind: 'bogus'")
+
+    monkeypatch.setattr("lottie.cli.run.instantiate_agent", _boom_instantiate)
+
+    result = runner.invoke(app, ["run", "echo", "--input", '{"query": "hi"}'])
+    assert result.exit_code != 0
+    # The error message must mention the agent name and the cause.
+    assert "echo" in result.output
+    assert "bogus" in result.output

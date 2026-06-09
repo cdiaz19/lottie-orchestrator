@@ -18,7 +18,6 @@ Provider defaults
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Annotated
 
@@ -27,7 +26,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from lottie.knowledge import GraphStore, KnowledgeManifest
+from lottie.knowledge import GraphStore, KnowledgeManifest, resolve_embedding_settings
 from lottie.knowledge.chunking import ChunkConfig, chunk_document
 from lottie.knowledge.embeddings import build_embedding_provider
 from lottie.knowledge.ingest import DocumentIngestInput, DocumentIngestSkill, IngestSource
@@ -111,9 +110,11 @@ def ingest(
         raise typer.Exit(1)
 
     # Resolve env-var defaults at call time (not import time) so that
-    # monkeypatch.setenv works correctly in tests.
-    effective_embedder = embedder or os.environ.get("LOTTIE_EMBEDDING_MODEL", "mock/embed")
-    effective_store = store or os.environ.get("LOTTIE_VECTOR_STORE", "memory")
+    # monkeypatch.setenv works correctly in tests.  Explicit CLI flags (--embedder,
+    # --store) take precedence; only the sentinels fall back to the shared helper.
+    _env_embedder, _env_store = resolve_embedding_settings()
+    effective_embedder = embedder or _env_embedder
+    effective_store = store or _env_store
 
     # Validate layer before touching the filesystem or building providers.
     try:

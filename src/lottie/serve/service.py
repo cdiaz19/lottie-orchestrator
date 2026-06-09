@@ -12,6 +12,7 @@ from lottie.llm import build_provider
 from lottie.project.config import load_agent_config
 from lottie.project.discovery import (
     discover_agents,
+    instantiate_agent,
     load_agent_class,
     load_input_model,
 )
@@ -81,10 +82,7 @@ class AgentService:
 
         try:
             agent_cls = load_agent_class(self._root, name)
-            if hasattr(agent_cls, "from_project"):
-                agent = agent_cls.from_project(llm=llm, root=self._root, config=cfg)
-            else:
-                agent = agent_cls(llm=llm)
+            agent = instantiate_agent(agent_cls, llm=llm, root=self._root, config=cfg)
         except Exception as exc:  # noqa: BLE001 — class import/instantiation failure
             raise AgentLoadError(f"cannot load agent '{name}': {exc}") from exc
 

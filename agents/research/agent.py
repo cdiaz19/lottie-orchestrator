@@ -19,7 +19,6 @@ Flow
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from skills.retrieval.schema import RetrievalSkillInput
@@ -28,7 +27,12 @@ from skills.summarizer.schema import SummarizerInput
 from skills.summarizer.skill import SummarizerSkill
 
 from lottie.core import BaseAgent
-from lottie.knowledge import GraphStore, KnowledgeManifest, index_manifest
+from lottie.knowledge import (
+    GraphStore,
+    KnowledgeManifest,
+    index_manifest,
+    resolve_embedding_settings,
+)
 from lottie.knowledge.embeddings import build_embedding_provider
 from lottie.knowledge.schema import RetrievalQuery
 from lottie.knowledge.store import build_vector_store
@@ -97,10 +101,11 @@ class ResearchAgent(BaseAgent[ResearchInput, ResearchOutput]):
     ) -> ResearchAgent:
         """Construct a ResearchAgent wired to the project's knowledge layer.
 
-        Reads ``LOTTIE_EMBEDDING_MODEL`` (default ``mock/embed``) and
-        ``LOTTIE_VECTOR_STORE`` (default ``memory``) from the environment so
-        that ``lottie run research`` works with NO API key in Phase 1; production
-        deployments set these vars to real providers.
+        Reads embedding settings from the environment via
+        :func:`~lottie.knowledge.resolve_embedding_settings` so that
+        ``lottie run research`` works with NO API key in Phase 1; production
+        deployments override ``LOTTIE_EMBEDDING_MODEL`` and
+        ``LOTTIE_VECTOR_STORE``.
 
         Steps
         -----
@@ -111,8 +116,15 @@ class ResearchAgent(BaseAgent[ResearchInput, ResearchOutput]):
         4. Build a ``GraphStore`` over the manifest for graph expansion.
         5. Construct and return a ``ResearchAgent`` with injected skills.
         """
-        embedding_model = os.environ.get("LOTTIE_EMBEDDING_MODEL", "mock/embed")
-        vector_store_kind = os.environ.get("LOTTIE_VECTOR_STORE", "memory")
+        # config is part of the from_project seam contract; reserved for
+        # per-agent embedder/store overrides (Phase 2).  Unused today.
+        _ = config
+
+        # TODO: index_manifest re-chunks+re-embeds the whole corpus on EVERY
+        # construction (i.e. every run_agent call).  Fine for Phase 1 (in-memory
+        # + mock embedder) but production must cache the warmed store or use a
+        # persistent Chroma backend to avoid O(corpus) embedding cost per request.
+        embedding_model, vector_store_kind = resolve_embedding_settings()
 
         embedder = build_embedding_provider(embedding_model)
         store = build_vector_store(vector_store_kind, root)

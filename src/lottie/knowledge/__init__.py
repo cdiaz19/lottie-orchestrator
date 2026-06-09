@@ -20,10 +20,13 @@ Public surface::
         DocumentIngestOutput,
         DocumentIngestSkill,
         index_manifest,
+        resolve_embedding_settings,
     )
 """
 
 from __future__ import annotations
+
+import os
 
 from lottie.knowledge.graph import GraphStore, build_knowledge_graph
 from lottie.knowledge.index import index_manifest
@@ -46,6 +49,21 @@ from lottie.knowledge.schema import (
     RetrievalResult,
 )
 
+
+def resolve_embedding_settings() -> tuple[str, str]:
+    """Return ``(embedding_model, vector_store_kind)`` from env with Phase-1 defaults.
+
+    Defaults: ``mock/embed`` (no API key) and ``memory`` (in-process store).
+    Production deployments override via ``LOTTIE_EMBEDDING_MODEL`` and
+    ``LOTTIE_VECTOR_STORE``.  CLI flags (``--embedder``, ``--store``) take
+    precedence — callers pass explicit values directly and ignore this helper.
+    """
+    return (
+        os.environ.get("LOTTIE_EMBEDDING_MODEL", "mock/embed"),
+        os.environ.get("LOTTIE_VECTOR_STORE", "memory"),
+    )
+
+
 __all__ = [
     "KnowledgeManifest",
     "KnowledgeLayer",
@@ -64,4 +82,5 @@ __all__ = [
     "DocumentIngestOutput",
     "DocumentIngestSkill",
     "index_manifest",
+    "resolve_embedding_settings",
 ]
