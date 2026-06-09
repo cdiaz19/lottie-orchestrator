@@ -19,6 +19,7 @@ Flow
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from skills.retrieval.schema import RetrievalSkillInput
@@ -27,9 +28,13 @@ from skills.summarizer.schema import SummarizerInput
 from skills.summarizer.skill import SummarizerSkill
 
 from lottie.core import BaseAgent
+from lottie.knowledge import GraphStore, KnowledgeManifest, index_manifest
+from lottie.knowledge.embeddings import build_embedding_provider
 from lottie.knowledge.schema import RetrievalQuery
+from lottie.knowledge.store import build_vector_store
 from lottie.llm import LLMProvider, Message
 from lottie.memory.base import MemoryClient
+from lottie.project.config import AgentConfig
 
 from .prompts import SYSTEM_PROMPT
 from .schema import Citation, ResearchInput, ResearchOutput
@@ -77,6 +82,46 @@ class ResearchAgent(BaseAgent[ResearchInput, ResearchOutput]):
         )
         self._retrieval = retrieval
         self._summarizer = summarizer or SummarizerSkill(llm)
+
+    # ------------------------------------------------------------------
+    # DI factory — used by AgentService / CLI when knowledge layer present
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def from_project(
+        cls,
+        *,
+        llm: LLMProvider,
+        root: Path,
+        config: AgentConfig,
+    ) -> ResearchAgent:
+        """Construct a ResearchAgent wired to the project's knowledge layer.
+
+        Reads ``LOTTIE_EMBEDDING_MODEL`` (default ``mock/embed``) and
+        ``LOTTIE_VECTOR_STORE`` (default ``memory``) from the environment so
+        that ``lottie run research`` works with NO API key in Phase 1; production
+        deployments set these vars to real providers.
+
+        Steps
+        -----
+        1. Build embedding provider + vector store from env vars.
+        2. Load the project's ``KnowledgeManifest`` from *root*.
+        3. Warm the store via :func:`~lottie.knowledge.index.index_manifest`
+           (existing, already-vetted knowledge docs — security gate not re-run).
+        4. Build a ``GraphStore`` over the manifest for graph expansion.
+        5. Construct and return a ``ResearchAgent`` with injected skills.
+        """
+        embedding_model = os.environ.get("LOTTIE_EMBEDDING_MODEL", "mock/embed")
+        vector_store_kind = os.environ.get("LOTTIE_VECTOR_STORE", "memory")
+
+        embedder = build_embedding_provider(embedding_model)
+        store = build_vector_store(vector_store_kind, root)
+        manifest = KnowledgeManifest.from_root(root)
+        index_manifest(manifest, embedder, store)
+        graph = GraphStore(manifest)
+        retrieval = RetrievalSkill(embedder, store, graph)
+        summarizer = SummarizerSkill(llm)
+        return cls(llm, retrieval=retrieval, summarizer=summarizer)
 
     # ------------------------------------------------------------------
     # Core logic

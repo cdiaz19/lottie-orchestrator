@@ -33,7 +33,10 @@ def run(
     data = _build_input(input_model, input_json, name)
 
     agent_cls = load_agent_class(root, name)
-    agent = agent_cls(llm=llm)
+    if hasattr(agent_cls, "from_project"):
+        agent = agent_cls.from_project(llm=llm, root=root, config=cfg)
+    else:
+        agent = agent_cls(llm=llm)
     try:
         result = agent.run(data)
     except typer.Exit:

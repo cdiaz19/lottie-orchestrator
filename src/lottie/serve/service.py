@@ -80,7 +80,11 @@ class AgentService:
             raise InvalidInputError(f"invalid input for '{name}': {exc}") from exc
 
         try:
-            agent = load_agent_class(self._root, name)(llm=llm)
+            agent_cls = load_agent_class(self._root, name)
+            if hasattr(agent_cls, "from_project"):
+                agent = agent_cls.from_project(llm=llm, root=self._root, config=cfg)
+            else:
+                agent = agent_cls(llm=llm)
         except Exception as exc:  # noqa: BLE001 — class import/instantiation failure
             raise AgentLoadError(f"cannot load agent '{name}': {exc}") from exc
 

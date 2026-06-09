@@ -19,12 +19,14 @@ Public surface::
         DocumentIngestInput,
         DocumentIngestOutput,
         DocumentIngestSkill,
+        index_manifest,
     )
 """
 
 from __future__ import annotations
 
 from lottie.knowledge.graph import GraphStore, build_knowledge_graph
+from lottie.knowledge.index import index_manifest
 from lottie.knowledge.ingest import (
     DocumentIngestInput,
     DocumentIngestOutput,
@@ -61,4 +63,5 @@ __all__ = [
     "DocumentIngestInput",
     "DocumentIngestOutput",
     "DocumentIngestSkill",
+    "index_manifest",
 ]
