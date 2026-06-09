@@ -150,7 +150,8 @@ class GraphStore:
             Age threshold in calendar days.
         now:
             Reference point (default: ``datetime.now(UTC)``).  Provide a fixed
-            value in tests for determinism.
+            value in tests for determinism.  A naive ``datetime`` (``tzinfo``
+            is ``None``) is interpreted as UTC.
 
         Accepted ``last_verified`` formats
         -----------------------------------
@@ -163,6 +164,8 @@ class GraphStore:
         Returns a sorted list.
         """
         reference: datetime = now if now is not None else datetime.now(UTC)
+        if reference.tzinfo is None:
+            reference = reference.replace(tzinfo=UTC)
         cutoff = reference - timedelta(days=days)
         stale_ids: list[str] = []
         for node, attrs in self._graph.nodes(data=True):

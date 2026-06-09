@@ -162,6 +162,10 @@ class TestImpact:
         store = GraphStore(m)
         assert store.impact("root") == ["a", "z"]
 
+    def test_impact_on_cycle_node(self, cycle_store: GraphStore) -> None:
+        """nx.descendants handles cycles; impact("x") must return ["y"] without looping."""
+        assert cycle_store.impact("x") == ["y"]
+
 
 # ---------------------------------------------------------------------------
 # GraphStore.cycles
@@ -188,6 +192,10 @@ class TestCycles:
         store = GraphStore(m)
         cycles = store.cycles()
         assert any("self_ref" in c for c in cycles)
+
+    def test_cycles_canonical_order(self, cycle_store: GraphStore) -> None:
+        """The x<->y cycle must be returned as ["x", "y"] (rotate-to-min form)."""
+        assert ["x", "y"] in cycle_store.cycles()
 
 
 # ---------------------------------------------------------------------------
@@ -217,6 +225,16 @@ class TestOrphans:
         store = GraphStore(m)
         result = store.orphans()
         assert result == sorted(result)
+
+    def test_ghost_node_excluded_from_orphans_and_stale(self) -> None:
+        """A ghost dep node (no Document, no last_verified) must not appear in
+        orphans() (it has an edge) or stale() (no parseable last_verified)."""
+        # "real" depends_on "ghost"; ghost has no Document, only an auto-created node
+        m = _manifest(_doc("real", depends_on=["ghost"]))
+        store = GraphStore(m)
+        now = datetime(2026, 6, 1, tzinfo=UTC)
+        assert "ghost" not in store.orphans()
+        assert "ghost" not in store.stale(90, now=now)
 
 
 # ---------------------------------------------------------------------------
@@ -274,3 +292,11 @@ class TestStale:
         store = GraphStore(m)
         # verified_date == now - days → NOT stale (strict <)
         assert "boundary" not in store.stale(days=90, now=self._NOW)
+
+    def test_stale_accepts_naive_now(self) -> None:
+        """A naive datetime passed as now is treated as UTC — no TypeError."""
+        m = _manifest(_doc("old", last_verified="2025-01-01"))
+        store = GraphStore(m)
+        naive_now = datetime(2026, 6, 1)  # tzinfo=None
+        aware_now = datetime(2026, 6, 1, tzinfo=UTC)
+        assert store.stale(90, now=naive_now) == store.stale(90, now=aware_now)
