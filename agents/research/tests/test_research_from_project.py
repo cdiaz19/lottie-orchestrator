@@ -206,10 +206,15 @@ def test_service_uses_from_project_when_present(
 
         @classmethod
         def from_project(
-            cls, *, llm: LLMProvider, root: Path, config: AgentConfig
+            cls,
+            *,
+            llm: LLMProvider,
+            root: Path,
+            config: AgentConfig,
+            enable_benchmarks: bool | None = None,
         ) -> SpyAgent:
             from_project_called.append(True)
-            return cls(llm=llm)
+            return cls(llm=llm, enable_benchmarks=enable_benchmarks)
 
     # Patch load_agent_class to return our SpyAgent
     monkeypatch.setattr(

@@ -131,6 +131,7 @@ def benchmark(root: Path, name: str, providers: list[str]) -> BenchmarkReport:
                 llm=build_provider(p),
                 root=root,
                 config=config,
+                enable_benchmarks=False,
             ),
             suite,
             input_model,

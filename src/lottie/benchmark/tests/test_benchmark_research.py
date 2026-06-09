@@ -28,10 +28,14 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic import BaseModel
 
 from lottie.benchmark.runner import benchmark
 from lottie.benchmark.schema import BenchmarkReport
+from lottie.core import BaseAgent
 from lottie.llm import MockLLMProvider
+from lottie.project.config import AgentConfig
+from lottie.project.discovery import instantiate_agent
 
 # ---------------------------------------------------------------------------
 # Fixture helpers
@@ -189,3 +193,81 @@ def test_benchmark_research_report_has_named_cases(
         "k=1 returns single hit digest",
     }
     assert set(names) == expected_names
+
+
+# ---------------------------------------------------------------------------
+# Regression guard: enable_benchmarks=False must propagate through the seam
+# ---------------------------------------------------------------------------
+
+
+class _DummyIn(BaseModel):
+    query: str
+
+
+class _DummyOut(BaseModel):
+    result: str
+
+
+class _DummyAgent(BaseAgent[_DummyIn, _DummyOut]):
+    """Minimal plain agent (no from_project) used to test the plain-cls branch."""
+
+    def _execute(self, data: _DummyIn) -> _DummyOut:
+        return _DummyOut(result=data.query)
+
+
+def test_instantiate_agent_plain_enable_benchmarks_false(tmp_path: Path) -> None:
+    """Plain agent built via instantiate_agent(..., enable_benchmarks=False) has flag False.
+
+    Locks the regression: the benchmark runner must suppress nested writes for
+    simple agents that have no from_project classmethod.
+    """
+    llm = MockLLMProvider(["unused"])
+    config = AgentConfig(provider="mock/mock-model")
+    agent = instantiate_agent(
+        _DummyAgent,  # type: ignore[arg-type]
+        llm=llm,
+        root=tmp_path,
+        config=config,
+        enable_benchmarks=False,
+    )
+    assert agent._enable_benchmarks is False
+
+
+def test_instantiate_agent_from_project_enable_benchmarks_false(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ResearchAgent built via instantiate_agent(..., enable_benchmarks=False) has flag False.
+
+    Locks the regression for from_project agents: the flag must propagate through
+    the seam into the agent AND its nested skills (retrieval, summarizer).
+    """
+    monkeypatch.setenv("LOTTIE_EMBEDDING_MODEL", "mock/embed")
+    monkeypatch.setenv("LOTTIE_VECTOR_STORE", "memory")
+
+    root = _make_fixture_root(tmp_path)
+
+    # Load the ResearchAgent class from the tmp_path fixture root
+    from lottie.project.discovery import load_agent_class
+
+    agent_cls = load_agent_class(root, "research")
+    llm = MockLLMProvider(["unused"])
+    config = AgentConfig(provider="mock/mock-model")
+
+    agent = instantiate_agent(
+        agent_cls,
+        llm=llm,
+        root=root,
+        config=config,
+        enable_benchmarks=False,
+    )
+
+    # The agent itself must have the flag suppressed
+    assert agent._enable_benchmarks is False
+
+    # The nested skills must also have the flag suppressed so no spurious
+    # benchmark writes occur when the runner calls agent.run() per eval case.
+    from agents.research.agent import ResearchAgent
+
+    assert isinstance(agent, ResearchAgent)
+    assert agent._retrieval._enable_benchmarks is False
+    assert agent._summarizer._enable_benchmarks is False

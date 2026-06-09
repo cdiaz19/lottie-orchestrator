@@ -98,6 +98,7 @@ class ResearchAgent(BaseAgent[ResearchInput, ResearchOutput]):
         llm: LLMProvider,
         root: Path,
         config: AgentConfig,
+        enable_benchmarks: bool | None = None,
     ) -> ResearchAgent:
         """Construct a ResearchAgent wired to the project's knowledge layer.
 
@@ -115,6 +116,14 @@ class ResearchAgent(BaseAgent[ResearchInput, ResearchOutput]):
            (existing, already-vetted knowledge docs — security gate not re-run).
         4. Build a ``GraphStore`` over the manifest for graph expansion.
         5. Construct and return a ``ResearchAgent`` with injected skills.
+
+        Parameters
+        ----------
+        enable_benchmarks:
+            Forwarded to every ``InstrumentedRunnable`` constructed here
+            (``RetrievalSkill``, ``SummarizerSkill``, and the agent itself) so
+            that nested benchmark writes are uniformly suppressed when the
+            benchmark runner passes ``False``.
         """
         # config is part of the from_project seam contract; reserved for
         # per-agent embedder/store overrides (Phase 2).  Unused today.
@@ -131,9 +140,14 @@ class ResearchAgent(BaseAgent[ResearchInput, ResearchOutput]):
         manifest = KnowledgeManifest.from_root(root)
         index_manifest(manifest, embedder, store)
         graph = GraphStore(manifest)
-        retrieval = RetrievalSkill(embedder, store, graph)
-        summarizer = SummarizerSkill(llm)
-        return cls(llm, retrieval=retrieval, summarizer=summarizer)
+        retrieval = RetrievalSkill(embedder, store, graph, enable_benchmarks=enable_benchmarks)
+        summarizer = SummarizerSkill(llm, enable_benchmarks=enable_benchmarks)
+        return cls(
+            llm,
+            retrieval=retrieval,
+            summarizer=summarizer,
+            enable_benchmarks=enable_benchmarks,
+        )
 
     # ------------------------------------------------------------------
     # Core logic

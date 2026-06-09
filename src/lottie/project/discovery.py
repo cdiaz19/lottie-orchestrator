@@ -182,6 +182,7 @@ def instantiate_agent(
     llm: LLMProvider,
     root: Path,
     config: AgentConfig,
+    enable_benchmarks: bool | None = None,
 ) -> BaseAgent[BaseModel, BaseModel]:
     """Construct an agent using the from_project seam when available.
 
@@ -190,10 +191,21 @@ def instantiate_agent(
     plain ``agent_cls(llm=llm)`` constructor for simple agents.  This is the
     single canonical dispatch point — both the CLI (``lottie run``) and the
     serving core (``AgentService``) delegate here so the logic is not duplicated.
+
+    Parameters
+    ----------
+    enable_benchmarks:
+        When ``False`` the constructed agent (and any nested skills) will NOT
+        write benchmark metric records during ``run()``.  Pass ``False`` from
+        the benchmark runner so eval cases don't produce spurious nested writes.
+        ``None`` (default) defers to the ``LOTTIE_DISABLE_BENCHMARKS`` env var,
+        which is the correct behaviour for the ``serve`` and ``run`` paths.
     """
     if hasattr(agent_cls, "from_project"):
-        return agent_cls.from_project(llm=llm, root=root, config=config)  # type: ignore[no-any-return]
-    return agent_cls(llm=llm)
+        return agent_cls.from_project(  # type: ignore[no-any-return]
+            llm=llm, root=root, config=config, enable_benchmarks=enable_benchmarks
+        )
+    return agent_cls(llm=llm, enable_benchmarks=enable_benchmarks)
 
 
 def required_fields(model: type[BaseModel]) -> list[str]:
