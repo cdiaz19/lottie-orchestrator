@@ -50,11 +50,17 @@ When `expand_graph=True` and a `GraphStore` is available:
    returns its direct `depends_on` dependencies (sorted).  Neighbours already
    represented in the base hits are excluded.
 3. **Wide re-query (v1)** — a second query with `k = max(q.k, store.count())`
-   retrieves the full corpus rank.  For each remaining neighbour doc id (sorted
-   for determinism), the first chunk matching that `doc_id` is selected.
-   This avoids adding a `get_by_doc_id` API to `VectorStore` and keeps both
-   layers independently replaceable.  The trade-off — a second O(n) scan — is
-   acceptable for `InMemoryVectorStore` corpora (< ~200 chunks).
+   retrieves the full corpus rank **without applying the caller's `layers`/`tags`
+   filters**.  This is a deliberate design decision: graph expansion intentionally
+   ignores the query's layer/tag filters, because a document's dependencies are
+   relevant context wherever they live.  A dependency in a different layer (e.g.
+   a PLATFORM doc depended on by a GLOBAL doc) is still a dependency and should
+   be surfaced to the caller.  Non-dependency docs outside the caller's layer
+   filter are never returned (only explicit `depends_on` neighbours are expanded).
+   For each remaining neighbour doc id (sorted for determinism), the first chunk
+   matching that `doc_id` is selected via an O(1) dict lookup.  This avoids
+   adding a `get_by_doc_id` API to `VectorStore` and keeps both layers
+   independently replaceable.
 4. **Discount** — each expansion hit's score is multiplied by
    `GRAPH_EXPANSION_DISCOUNT = 0.5`, ensuring base hits always rank above
    expansion hits at the same raw similarity.

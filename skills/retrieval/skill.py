@@ -34,6 +34,10 @@ Key properties:
   store abstraction to graph concepts and keeps both layers independently
   replaceable.  The trade-off — a second O(n) scan — is acceptable for the
   corpus sizes targeted by ``InMemoryVectorStore`` (< ~200 chunks).
+* **Layer/tag filter independence**: the wide re-query used for expansion
+  intentionally ignores the query's ``layers``/``tags`` filters, because a
+  document's dependencies are relevant context wherever they live.  A dependency
+  in a different layer is still a dependency.
 """
 
 from __future__ import annotations
@@ -43,7 +47,7 @@ from pathlib import Path
 from lottie.core import BaseSkill
 from lottie.knowledge.embeddings import EmbeddingProvider
 from lottie.knowledge.graph import GraphStore
-from lottie.knowledge.schema import RetrievalHit, RetrievalResult
+from lottie.knowledge.schema import Embedding, RetrievalHit, RetrievalResult
 from lottie.knowledge.store import VectorStore
 
 from .schema import RetrievalSkillInput, RetrievalSkillOutput
@@ -109,14 +113,12 @@ class RetrievalSkill(BaseSkill[RetrievalSkillInput, RetrievalSkillOutput]):
         base hits are returned, sorted by score DESC then chunk.id ASC.
 
         When ``expand_graph`` is True and a GraphStore is present:
-        1. Compute base hits (top-k by vector similarity).
-        2. Collect ``depends_on`` neighbour doc ids for every base-hit doc.
-        3. Exclude neighbours already represented in the base hits.
-        4. Issue a WIDE query (k = max(q.k, store.count())) to retrieve the
-           full corpus rank; for each remaining neighbour doc id take the first
-           matching chunk and append it with score * GRAPH_EXPANSION_DISCOUNT.
-        5. De-duplicate by chunk.id (base hits win).
-        6. Sort final list by score DESC then chunk.id ASC.
+        1. Compute base hits (top-k by vector similarity, respecting caller
+           layer/tag filters).
+        2. Delegate to ``_expand_graph_hits`` to collect discounted dependency
+           chunks (layer/tag filters are intentionally not applied — see module
+           docstring).
+        3. Merge and sort final list by score DESC then chunk.id ASC.
 
         The result may exceed ``q.k`` when expansion is active — this is
         intentional (expansion is additive, not a replacement).
@@ -127,7 +129,7 @@ class RetrievalSkill(BaseSkill[RetrievalSkillInput, RetrievalSkillOutput]):
             raise ValueError("embedding provider returned no embedding for the query text")
         embedding = embeddings[0]
 
-        # Step 1 — base hits
+        # Step 1 — base hits (caller filters respected here)
         base_hits = self._store.query(
             embedding,
             q.k,
@@ -138,6 +140,53 @@ class RetrievalSkill(BaseSkill[RetrievalSkillInput, RetrievalSkillOutput]):
         # Step 2 — graph expansion (only when requested AND graph is available)
         if not q.expand_graph or self._graph is None:
             return RetrievalSkillOutput(result=RetrievalResult(hits=base_hits))
+
+        expansion_hits = self._expand_graph_hits(base_hits, embedding)
+        if not expansion_hits:
+            return RetrievalSkillOutput(result=RetrievalResult(hits=base_hits))
+
+        # Merge and sort: score DESC, chunk.id ASC for determinism on ties
+        final_hits = base_hits + expansion_hits
+        final_hits.sort(key=lambda h: (-h.score, h.chunk.id))
+
+        return RetrievalSkillOutput(result=RetrievalResult(hits=final_hits))
+
+    def _expand_graph_hits(
+        self,
+        base_hits: list[RetrievalHit],
+        embedding: Embedding,
+    ) -> list[RetrievalHit]:
+        """Return discounted expansion hits for all unrepresented neighbour docs.
+
+        Collects ``depends_on`` neighbour doc ids from every base-hit doc, then
+        issues a WIDE query (``k = max(base k, store.count())``) WITHOUT the
+        caller's layer/tag filters.  This is intentional: a document's
+        dependencies are relevant context wherever they live, regardless of
+        which layer or tags the caller originally filtered for.  See module
+        docstring for the full rationale.
+
+        For each remaining neighbour doc id (sorted for determinism) the first
+        wide-hit chunk for that doc is selected, deduplicated against base-hit
+        chunk ids, and appended with ``score * GRAPH_EXPANSION_DISCOUNT``.
+
+        The wide hits are indexed into a dict (O(W)) so each neighbour lookup
+        is O(1), giving O(W + N) overall rather than O(N × W).
+
+        Parameters
+        ----------
+        base_hits:
+            The top-k base results already computed by ``_execute``.
+        embedding:
+            Query embedding reused for the wide re-query.
+
+        Returns
+        -------
+        list[RetrievalHit]
+            Zero or more discounted expansion hits, in sorted order
+            ``(-score, chunk.id)``.  Empty list when all neighbours are already
+            covered by base hits.
+        """
+        assert self._graph is not None  # caller guarantees this
 
         # Collect doc ids already covered by base hits
         seen_doc_ids: set[str] = {hit.chunk.doc_id for hit in base_hits}
@@ -150,20 +199,19 @@ class RetrievalSkill(BaseSkill[RetrievalSkillInput, RetrievalSkillOutput]):
         neighbor_ids -= seen_doc_ids
 
         if not neighbor_ids:
-            # All neighbours are already in base hits — nothing to expand
-            return RetrievalSkillOutput(result=RetrievalResult(hits=base_hits))
+            return []
 
-        # WIDE query: fetch enough results to cover the full corpus rank so
-        # that every neighbour doc's best chunk is reachable.  We use
-        # max(q.k, store.count()) as the ceiling.  See module docstring for
-        # the v1 re-query rationale.
-        wide_k = max(q.k, self._store.count())
-        wide = self._store.query(
-            embedding,
-            wide_k,
-            layers=q.layers or None,
-            tags=q.tags or None,
-        )
+        # WIDE query: intentionally NO layer/tag filters so cross-layer
+        # dependencies are reachable.  See module docstring.
+        wide_k = max(len(base_hits), self._store.count())
+        wide_hits = self._store.query(embedding, wide_k, layers=None, tags=None)
+
+        # Build O(1)-lookup dict: first wide hit per doc_id (preserves wide order
+        # so the best-scored chunk per doc is selected).
+        first_hit_by_doc: dict[str, RetrievalHit] = {}
+        for wide_hit in wide_hits:
+            if wide_hit.chunk.doc_id not in first_hit_by_doc:
+                first_hit_by_doc[wide_hit.chunk.doc_id] = wide_hit
 
         # Build the set of chunk ids already in base results (for dedup)
         seen_chunk_ids: set[str] = {hit.chunk.id for hit in base_hits}
@@ -172,22 +220,15 @@ class RetrievalSkill(BaseSkill[RetrievalSkillInput, RetrievalSkillOutput]):
         # order for determinism
         expansion_hits: list[RetrievalHit] = []
         for neighbor_doc_id in sorted(neighbor_ids):
-            for wide_hit in wide:
-                if (
-                    wide_hit.chunk.doc_id == neighbor_doc_id
-                    and wide_hit.chunk.id not in seen_chunk_ids
-                ):
-                    expansion_hits.append(
-                        RetrievalHit(
-                            chunk=wide_hit.chunk,
-                            score=wide_hit.score * GRAPH_EXPANSION_DISCOUNT,
-                        )
-                    )
-                    seen_chunk_ids.add(wide_hit.chunk.id)
-                    break  # one chunk per neighbour doc
+            candidate: RetrievalHit | None = first_hit_by_doc.get(neighbor_doc_id)
+            if candidate is None or candidate.chunk.id in seen_chunk_ids:
+                continue
+            expansion_hits.append(
+                RetrievalHit(
+                    chunk=candidate.chunk,
+                    score=candidate.score * GRAPH_EXPANSION_DISCOUNT,
+                )
+            )
+            seen_chunk_ids.add(candidate.chunk.id)
 
-        # Merge and sort: score DESC, chunk.id ASC for determinism on ties
-        final_hits = base_hits + expansion_hits
-        final_hits.sort(key=lambda h: (-h.score, h.chunk.id))
-
-        return RetrievalSkillOutput(result=RetrievalResult(hits=final_hits))
+        return expansion_hits

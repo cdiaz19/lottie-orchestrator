@@ -259,3 +259,117 @@ def test_last_metrics_populated_after_expand_run() -> None:
 
     assert skill.last_metrics is not None
     assert skill.last_metrics.success is True
+
+
+# ---------------------------------------------------------------------------
+# Test: graph expansion crosses layer/tag filters
+# ---------------------------------------------------------------------------
+
+
+def test_expansion_crosses_layer_filter() -> None:
+    """Graph expansion returns cross-layer dependency chunks.
+
+    Setup:
+      - doc "a": layer=PLATFORM, text "alpha apple", no deps.
+      - doc "b": layer=GLOBAL,   text "beta banana", depends_on=["a"].
+      - doc "c": layer=PLATFORM, text "alpha cherry", no deps (non-dependency).
+
+    Query with layers=[GLOBAL] and expand_graph=True:
+      - Base hits respect the GLOBAL filter: only "b#0" (GLOBAL) is a base hit.
+      - Expansion ignores the layer filter: "a#0" (PLATFORM, dependency of b)
+        IS included as an expansion hit.
+      - Non-dependency PLATFORM doc "c#0" is NOT included (not a neighbour).
+    """
+    embedder = MockEmbeddingProvider()
+    store = InMemoryVectorStore()
+
+    doc_a = Document(
+        id="a",
+        source="knowledge/platform/a.md",
+        layer=KnowledgeLayer.PLATFORM,
+        content="alpha apple",
+        depends_on=[],
+        status=DocStatus.CURATED,
+    )
+    doc_b = Document(
+        id="b",
+        source="knowledge/global/b.md",
+        layer=KnowledgeLayer.GLOBAL,
+        content="beta banana",
+        depends_on=["a"],
+        status=DocStatus.CURATED,
+    )
+    doc_c = Document(
+        id="c",
+        source="knowledge/platform/c.md",
+        layer=KnowledgeLayer.PLATFORM,
+        content="alpha cherry",
+        depends_on=[],
+        status=DocStatus.CURATED,
+    )
+    manifest = KnowledgeManifest(documents=[doc_a, doc_b, doc_c])
+    graph = GraphStore(manifest)
+
+    # Seed store with all three chunks
+    text_a = "alpha apple"
+    chunk_a = Chunk(
+        id="a#0",
+        doc_id="a",
+        index=0,
+        text=text_a,
+        start=0,
+        end=len(text_a),
+        metadata={"layer": "platform", "doc_id": "a"},
+    )
+    text_b = "beta banana"
+    chunk_b = Chunk(
+        id="b#0",
+        doc_id="b",
+        index=0,
+        text=text_b,
+        start=0,
+        end=len(text_b),
+        metadata={"layer": "global", "doc_id": "b"},
+    )
+    text_c = "alpha cherry"
+    chunk_c = Chunk(
+        id="c#0",
+        doc_id="c",
+        index=0,
+        text=text_c,
+        start=0,
+        end=len(text_c),
+        metadata={"layer": "platform", "doc_id": "c"},
+    )
+    store.add([
+        EmbeddedChunk(chunk=chunk_a, embedding=embedder.embed([text_a])[0]),
+        EmbeddedChunk(chunk=chunk_b, embedding=embedder.embed([text_b])[0]),
+        EmbeddedChunk(chunk=chunk_c, embedding=embedder.embed([text_c])[0]),
+    ])
+
+    skill = RetrievalSkill(embedder, store, graph)
+    out = skill.run(
+        RetrievalSkillInput(
+            query=RetrievalQuery(
+                text="beta banana",
+                k=1,
+                layers=[KnowledgeLayer.GLOBAL],
+                expand_graph=True,
+            )
+        )
+    )
+
+    hit_ids = [h.chunk.id for h in out.result.hits]
+
+    # Base hit: GLOBAL doc "b" is present
+    assert "b#0" in hit_ids, "base hit 'b' (GLOBAL) must be present"
+
+    # Cross-layer expansion: PLATFORM dependency "a" IS present despite layer filter
+    assert "a#0" in hit_ids, (
+        "expansion must include PLATFORM dependency 'a' even though layer filter is GLOBAL"
+    )
+
+    # Non-dependency PLATFORM doc "c" must NOT appear
+    assert "c#0" not in hit_ids, (
+        "non-dependency PLATFORM doc 'c' must not be included"
+    )
