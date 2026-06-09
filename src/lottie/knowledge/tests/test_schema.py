@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from lottie.knowledge.schema import (
     Chunk,
+    DocStatus,
     Document,
     KnowledgeLayer,
     RetrievalHit,
@@ -38,3 +39,24 @@ def test_retrieval_query_defaults() -> None:
     assert q.expand_graph is False
     assert q.layers == []
     assert q.tags == []
+
+
+def test_document_status_defaults_to_draft() -> None:
+    d = Document(
+        id="g/conv",
+        source="knowledge/global/conv.md",
+        layer=KnowledgeLayer.GLOBAL,
+        content="x",
+    )
+    assert d.status == DocStatus.DRAFT
+
+
+def test_document_status_explicit_curated() -> None:
+    d = Document(
+        id="g/conv",
+        source="knowledge/global/conv.md",
+        layer=KnowledgeLayer.GLOBAL,
+        content="x",
+        status=DocStatus.CURATED,
+    )
+    assert d.status == DocStatus.CURATED

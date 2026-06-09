@@ -24,7 +24,7 @@ class KnowledgeLayer(StrEnum):
 class DocStatus(StrEnum):
     """Lifecycle status of a knowledge document."""
 
-    DRAFT = "draft"
+    DRAFT = "draft"      # document lifecycle — distinct from KnowledgeLayer.DRAFT (folder)
     CURATED = "curated"
     AGING = "aging"
     DEPRECATED = "deprecated"
@@ -41,6 +41,7 @@ class Document(BaseModel):
     frontmatter: dict[str, str] = {}
     tags: list[str] = []
     depends_on: list[str] = []
+    status: DocStatus = DocStatus.DRAFT
 
 
 class Chunk(BaseModel):
