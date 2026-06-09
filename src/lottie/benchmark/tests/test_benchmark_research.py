@@ -153,6 +153,9 @@ def test_benchmark_research_with_mock_provider(
         assert case_result.success, (
             f"Case '{case_result.name}' failed: {case_result.error}"
         )
+        assert case_result.passed, (
+            f"Case '{case_result.name}' eval expectations not met"
+        )
 
     # Aggregate metrics are populated
     assert provider_report.success_rate == pytest.approx(1.0)
@@ -213,6 +216,35 @@ class _DummyAgent(BaseAgent[_DummyIn, _DummyOut]):
 
     def _execute(self, data: _DummyIn) -> _DummyOut:
         return _DummyOut(result=data.query)
+
+
+def test_research_agent_fallback_summarizer_forwards_enable_benchmarks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ResearchAgent with no explicit summarizer arg uses a fallback SummarizerSkill
+    that inherits enable_benchmarks=False — regression guard for the bug where the
+    fallback was constructed without forwarding the flag.
+    """
+    monkeypatch.setenv("LOTTIE_EMBEDDING_MODEL", "mock/embed")
+    monkeypatch.setenv("LOTTIE_VECTOR_STORE", "memory")
+
+    from lottie.knowledge.embeddings import build_embedding_provider
+    from lottie.knowledge.store import build_vector_store
+
+    embedder = build_embedding_provider("mock/embed")
+    store = build_vector_store("memory", tmp_path)
+
+    from skills.retrieval.skill import RetrievalSkill
+
+    retrieval = RetrievalSkill(embedder, store)
+
+    from agents.research.agent import ResearchAgent
+
+    llm = MockLLMProvider(["unused"])
+    # No summarizer passed → fallback SummarizerSkill must pick up enable_benchmarks=False
+    agent = ResearchAgent(llm, retrieval=retrieval, enable_benchmarks=False)
+
+    assert agent._summarizer._enable_benchmarks is False
 
 
 def test_instantiate_agent_plain_enable_benchmarks_false(tmp_path: Path) -> None:

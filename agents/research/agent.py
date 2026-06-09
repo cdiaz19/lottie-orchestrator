@@ -85,7 +85,7 @@ class ResearchAgent(BaseAgent[ResearchInput, ResearchOutput]):
             benchmarks_root=benchmarks_root,
         )
         self._retrieval = retrieval
-        self._summarizer = summarizer or SummarizerSkill(llm)
+        self._summarizer = summarizer or SummarizerSkill(llm, enable_benchmarks=enable_benchmarks)
 
     # ------------------------------------------------------------------
     # DI factory — used by AgentService / CLI when knowledge layer present
