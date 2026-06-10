@@ -20,7 +20,8 @@ from lottie.benchmark.schema import (
 )
 from lottie.core import BaseAgent
 from lottie.llm import build_provider
-from lottie.project.discovery import load_agent_class, load_input_model
+from lottie.project.config import load_agent_config
+from lottie.project.discovery import instantiate_agent, load_agent_class, load_input_model
 
 
 def load_suite(root: Path, name: str) -> EvalSuite:
@@ -122,8 +123,19 @@ def benchmark(root: Path, name: str, providers: list[str]) -> BenchmarkReport:
     suite = load_suite(root, name)
     input_model = load_input_model(root, name)
     agent_cls = load_agent_class(root, name)
+    config = load_agent_config(root / "agents" / name)
     reports = [
-        run_suite(agent_cls(llm=build_provider(p), enable_benchmarks=False), suite, input_model)
+        run_suite(
+            instantiate_agent(
+                agent_cls,
+                llm=build_provider(p),
+                root=root,
+                config=config,
+                enable_benchmarks=False,
+            ),
+            suite,
+            input_model,
+        )
         for p in providers
     ]
     return BenchmarkReport(agent=name, providers=reports)

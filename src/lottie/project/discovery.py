@@ -17,7 +17,8 @@ import typer
 from pydantic import BaseModel
 
 from lottie.core import BaseAgent
-from lottie.project.config import load_agent_config
+from lottie.llm import LLMProvider
+from lottie.project.config import AgentConfig, load_agent_config
 
 
 class UnitInfo(BaseModel):
@@ -173,6 +174,38 @@ def load_system_prompt(root: Path, name: str) -> str | None:
     module = _import_unit_module(root, f"agents.{name}.prompts", name)
     prompt = getattr(module, "SYSTEM_PROMPT", None)
     return prompt if isinstance(prompt, str) else None
+
+
+def instantiate_agent(
+    agent_cls: type[BaseAgent[BaseModel, BaseModel]],
+    *,
+    llm: LLMProvider,
+    root: Path,
+    config: AgentConfig,
+    enable_benchmarks: bool | None = None,
+) -> BaseAgent[BaseModel, BaseModel]:
+    """Construct an agent using the from_project seam when available.
+
+    Uses ``agent_cls.from_project(llm=llm, root=root, config=config)`` for
+    knowledge-backed agents that define the classmethod, and falls back to the
+    plain ``agent_cls(llm=llm)`` constructor for simple agents.  This is the
+    single canonical dispatch point — both the CLI (``lottie run``) and the
+    serving core (``AgentService``) delegate here so the logic is not duplicated.
+
+    Parameters
+    ----------
+    enable_benchmarks:
+        When ``False`` the constructed agent (and any nested skills) will NOT
+        write benchmark metric records during ``run()``.  Pass ``False`` from
+        the benchmark runner so eval cases don't produce spurious nested writes.
+        ``None`` (default) defers to the ``LOTTIE_DISABLE_BENCHMARKS`` env var,
+        which is the correct behaviour for the ``serve`` and ``run`` paths.
+    """
+    if hasattr(agent_cls, "from_project"):
+        return agent_cls.from_project(  # type: ignore[no-any-return]
+            llm=llm, root=root, config=config, enable_benchmarks=enable_benchmarks
+        )
+    return agent_cls(llm=llm, enable_benchmarks=enable_benchmarks)
 
 
 def required_fields(model: type[BaseModel]) -> list[str]:

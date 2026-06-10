@@ -213,3 +213,29 @@ def test_run_agent_broken_schema_raises_load_error(
     svc = AgentService(demo)
     with pytest.raises(AgentLoadError):
         svc.run_agent("echo", {"query": "hi"})
+
+
+def test_run_agent_from_project_failure_raises_load_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """instantiate_agent failure from from_project is caught and re-raised as AgentLoadError.
+
+    Verifies that the instantiate_agent call in service.py sits inside the
+    try/except that converts arbitrary exceptions to AgentLoadError — so a broken
+    knowledge tree / bad env never leaks a raw exception to the transport layer.
+    """
+    demo = _scaffold(tmp_path, monkeypatch)
+    _mock_provider(monkeypatch)
+
+    # Patch instantiate_agent to simulate a from_project failure
+    # (e.g. build_vector_store raised because of a bad LOTTIE_VECTOR_STORE value).
+    def _boom_instantiate(agent_cls: object, **kwargs: object) -> object:
+        raise ValueError("bogus vector store kind: 'bogus'")
+
+    monkeypatch.setattr("lottie.serve.service.instantiate_agent", _boom_instantiate)
+
+    svc = AgentService(demo)
+    with pytest.raises(AgentLoadError) as exc_info:
+        svc.run_agent("echo", {"query": "hi"})
+    assert "echo" in str(exc_info.value)
+    assert "bogus" in str(exc_info.value)

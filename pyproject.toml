@@ -13,12 +13,16 @@ dependencies = [
     # mypy + ruff are runtime deps: the rule-13 code-write gate (SchemaValidatorSkill,
     # used by `lottie create --from-desc`) shells out to them, so end users need them.
     "mypy>=2.1.0",
+    "networkx>=3.6.1",
     "pydantic>=2.13.4",
     "pyyaml>=6.0.3",
     "rich>=15.0.0",
     "ruff>=0.15.14",
     "typer>=0.26.2",
 ]
+
+[project.optional-dependencies]
+chroma = ["chromadb>=1.5.9"]
 
 [project.scripts]
 lottie = "lottie.cli:app"
@@ -28,6 +32,7 @@ dev = [
     "pytest>=9.0.3",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
+    "types-networkx>=3.6.1.20260518",
     "types-pyyaml>=6.0.12.20260518",
 ]
 
@@ -45,7 +50,7 @@ warn_unreachable = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["detect_secrets.*", "bandit.*"]
+module = ["detect_secrets.*", "bandit.*", "chromadb.*"]
 ignore_missing_imports = true
 
 [tool.ruff]

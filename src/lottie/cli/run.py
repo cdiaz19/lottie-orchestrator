@@ -9,7 +9,12 @@ from pydantic import BaseModel, ValidationError
 
 from lottie.llm import build_provider
 from lottie.project.config import find_project_root, load_agent_config
-from lottie.project.discovery import load_agent_class, load_input_model, required_fields
+from lottie.project.discovery import (
+    instantiate_agent,
+    load_agent_class,
+    load_input_model,
+    required_fields,
+)
 
 
 def run(
@@ -32,8 +37,11 @@ def run(
     input_model = load_input_model(root, name)
     data = _build_input(input_model, input_json, name)
 
-    agent_cls = load_agent_class(root, name)
-    agent = agent_cls(llm=llm)
+    try:
+        agent_cls = load_agent_class(root, name)
+        agent = instantiate_agent(agent_cls, llm=llm, root=root, config=cfg)
+    except Exception as exc:
+        raise typer.BadParameter(f"cannot load agent '{name}': {exc}") from exc
     try:
         result = agent.run(data)
     except typer.Exit:
