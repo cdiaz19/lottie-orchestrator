@@ -11,8 +11,7 @@ import os
 from pathlib import Path
 
 import pytest
-from typer._click.testing import Result
-from typer.testing import CliRunner
+from typer.testing import CliRunner, Result
 
 from lottie.cli import app
 
