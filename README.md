@@ -91,4 +91,4 @@ It's verified in the open — see the [lottie-lab](https://github.com/cdiaz19/lo
 
 ---
 
-Full architecture spec: [`LOTTIE_PHASE0_SPEC.md`](./LOTTIE_PHASE0_SPEC.md) · Contributor guide: [`CLAUDE.md`](./CLAUDE.md)
+Full architecture spec: [`LOTTIE_PHASE0_SPEC.md`](./LOTTIE_PHASE0_SPEC.md)
