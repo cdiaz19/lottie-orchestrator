@@ -16,6 +16,7 @@ from lottie.cli.knowledge import knowledge_app
 from lottie.cli.memory import memory_app
 from lottie.cli.registry import inspect_app, list_app
 from lottie.cli.run import run
+from lottie.cli.serve import serve
 from lottie.cli.status import status
 
 app = typer.Typer(
@@ -40,5 +41,6 @@ app.add_typer(list_app, name="list")
 app.add_typer(memory_app, name="memory")
 app.add_typer(inspect_app, name="inspect")
 app.command("run")(run)
+app.command("serve")(serve)
 app.command("status")(status)
 app.command("doctor")(doctor)
