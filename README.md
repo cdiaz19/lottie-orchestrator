@@ -1,6 +1,6 @@
 # LOTTIE — AI Orchestrator
 
-[![codecov](https://codecov.io/github/cdiaz19/lottie-orchestrator/graph/badge.svg?token=WX4QZOEEJG)](https://codecov.io/github/cdiaz19/lottie-orchestrator)
+![Status](https://img.shields.io/badge/status-active-success) [![codecov](https://codecov.io/github/cdiaz19/lottie-orchestrator/graph/badge.svg?token=WX4QZOEEJG)](https://codecov.io/github/cdiaz19/lottie-orchestrator)
 
 Provider-agnostic multi-agent AI orchestration framework with shared knowledge and AI governance.
 
