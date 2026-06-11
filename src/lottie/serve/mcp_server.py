@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import anyio
 from mcp import types
 from mcp.server.lowlevel import Server
 
@@ -18,7 +19,7 @@ from lottie.project.discovery import (
     load_input_model,
     load_system_prompt,
 )
-from lottie.serve.service import AgentService
+from lottie.serve.service import AgentService, ServeError
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,6 @@ def _tool_description(root: Path, name: str) -> str:
 def build_mcp_server(root: Path, *, service: AgentService | None = None) -> Server:
     """Build an MCP Server exposing one typed tool per healthy agent under `root`."""
     svc = service or AgentService(root)
-    _ = svc  # reserved for call_tool (Task 3)
 
     tools: dict[str, types.Tool] = {}
     for unit in discover_agents(root):
@@ -55,5 +55,28 @@ def build_mcp_server(root: Path, *, service: AgentService | None = None) -> Serv
     @server.list_tools()  # type: ignore[no-untyped-call, untyped-decorator]
     async def _list_tools() -> list[types.Tool]:
         return list(tools.values())
+
+    @server.call_tool(validate_input=False)  # type: ignore[untyped-decorator]
+    async def _call_tool(
+        name: str, arguments: dict[str, object]
+    ) -> tuple[list[types.ContentBlock], dict[str, object]] | types.CallToolResult:
+        try:
+            result = await anyio.to_thread.run_sync(
+                lambda: svc.run_agent(name, arguments)
+            )
+        except ServeError as exc:
+            return types.CallToolResult(
+                content=[types.TextContent(type="text", text=str(exc))],
+                isError=True,
+            )
+        metrics = types.TextContent(
+            type="text",
+            text=(
+                f"[lottie] {result.latency_ms:.0f}ms · "
+                f"{result.input_tokens}/{result.output_tokens} tok · "
+                f"${result.cost_usd:.4f}"
+            ),
+        )
+        return ([metrics], result.output)
 
     return server
