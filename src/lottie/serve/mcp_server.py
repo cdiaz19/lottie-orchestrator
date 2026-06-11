@@ -13,6 +13,7 @@ from pathlib import Path
 import anyio
 from mcp import types
 from mcp.server.lowlevel import Server
+from mcp.server.stdio import stdio_server
 
 from lottie.project.discovery import (
     discover_agents,
@@ -80,3 +81,21 @@ def build_mcp_server(root: Path, *, service: AgentService | None = None) -> Serv
         return ([metrics], result.output)
 
     return server
+
+
+async def _run_stdio(server: Server) -> None:
+    async with stdio_server() as (read_stream, write_stream):
+        await server.run(
+            read_stream, write_stream, server.create_initialization_options()
+        )
+
+
+def _run_stdio_blocking(server: Server) -> None:
+    """Drive the async stdio loop to completion (seam: patched in tests)."""
+    anyio.run(_run_stdio, server)
+
+
+def serve_stdio(root: Path) -> None:
+    """Build the MCP server for `root` and serve it over stdio until stdin closes."""
+    server = build_mcp_server(root)
+    _run_stdio_blocking(server)

@@ -139,3 +139,22 @@ async def test_call_tool_execution_error_is_error(
         res = await client.call_tool("echo", {"query": "hi"})
 
     assert res.isError is True  # AgentExecutionError → isError
+
+
+def test_serve_stdio_runs_built_server(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """serve_stdio builds the server for `root` and hands it to the run loop."""
+    import lottie.serve.mcp_server as mod
+
+    demo = _scaffold(tmp_path, monkeypatch)
+    captured: dict[str, object] = {}
+
+    def _fake_run(server: object) -> None:
+        captured["server"] = server
+
+    # Replace the anyio-driven loop so the test never blocks on stdio.
+    monkeypatch.setattr(mod, "_run_stdio_blocking", _fake_run)
+    mod.serve_stdio(demo)
+
+    assert "server" in captured  # a built Server was passed to the run loop
