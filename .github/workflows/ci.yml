@@ -17,10 +17,14 @@ jobs:
           python-version: "3.12"
           enable-cache: true
       - name: Sync dependencies
-        run: uv sync --dev --extra chroma
+        run: uv sync --dev --extra chroma --extra serve
       - name: Lint
         run: uv run ruff check .
       - name: Type check
         run: uv run mypy --strict src
       - name: Tests with coverage (report only)
-        run: uv run pytest -q --cov=lottie --cov-report=term-missing
+        run: uv run pytest -q --cov=lottie --cov-report=term-missing --cov-report=xml
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}

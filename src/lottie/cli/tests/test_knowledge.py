@@ -11,7 +11,10 @@ import os
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner, Result
+
+# typer 0.26.x vendors click; CliRunner.invoke returns typer._click.testing.Result,
+# which typer.testing re-exports but does not list in __all__ (mypy attr-defined).
+from typer.testing import CliRunner, Result  # type: ignore[attr-defined]
 
 from lottie.cli import app
 
