@@ -23,6 +23,7 @@ dependencies = [
 
 [project.optional-dependencies]
 chroma = ["chromadb>=1.5.9"]
+serve = ["mcp>=1.27.2"]
 
 [project.scripts]
 lottie = "lottie.cli:app"
