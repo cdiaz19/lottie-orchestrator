@@ -207,3 +207,7 @@ All hermetic (`MockLLMProvider`, `MemorySaver`, mock embeddings), skipif-guarded
 | FU-3 | Parallel/HITL support in `LocalEngine` (no-dep) | later, if demanded |
 | FU-4 | REST/web resume surface (beyond CLI) | Integration phase |
 | FU-5 | Skill-internal LLM token accounting in `last_metrics` (carried from Phase 1 FU-2 / Phase 2) | later |
+| FU-6 | Register `MeshState`/`StepResult` with langgraph's msgpack serde (`allowed_msgpack_modules`) — langgraph 1.2.4 emits a "deserializing unregistered type … blocked in a future version" warning on checkpoint reads; non-breaking today, must fix before a langgraph upgrade that enforces strict msgpack | before next langgraph bump |
+| FU-7 | Honor `ApprovalDecision.edited_input` on approve (currently ignored; CLI `--input` wired but inert) — and run `SecurityGate.check_input` on the edited payload in `resume_agent` when it is honored | later |
+| FU-8 | Wire `lottie mesh history` to `LangGraphEngine.history()` (currently an informational stub; in-process demo possible, cross-process needs `SqliteSaver`) | later |
+| FU-9 | Durable cross-process resume: default the serve/CLI resume path to `SqliteSaver` so a checkpoint survives process exit (MemorySaver resume is in-process only today) | Integration phase |
