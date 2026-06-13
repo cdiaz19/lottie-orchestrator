@@ -114,3 +114,40 @@ def test_mesh_output_status_complete_on_normal_run() -> None:
     out = mesh.run(MeshInput(task="t"))
     assert out.status == "complete" and out.thread_id is None and out.pending is None
     assert out.final == "done"
+
+
+def test_mesh_agent_resume_delegates_to_engine() -> None:
+    import pytest
+
+    try:
+        import langgraph  # noqa: F401
+    except ImportError:
+        pytest.skip("needs [mesh] extra")
+
+    from lottie.llm import MockLLMProvider
+    from lottie.mesh.base import MeshAgent
+    from lottie.mesh.langgraph_engine import LangGraphEngine
+    from lottie.mesh.schema import (
+        ApprovalDecision,
+        MeshInput,
+        MeshState,  # noqa: F401  (used in `node` annotation under PEP 563)
+        StepResult,
+    )
+
+    def node(state: MeshState) -> MeshState:
+        return state.with_step(StepResult(worker="deploy", result="shipped"))
+
+    mesh = MeshAgent(
+        MockLLMProvider(["deploy", "FINISH", "FINISH"]),
+        nodes={"deploy": node},
+        descriptions={"deploy": "ships"},
+        engine=LangGraphEngine(interrupt_before=["deploy"]),
+        enable_benchmarks=False,
+    )
+    out = mesh.run(MeshInput(task="ship"))
+    assert out.status == "interrupted" and out.thread_id and out.pending
+    assert out.pending.worker == "deploy"
+
+    resumed = mesh.resume(out.thread_id, ApprovalDecision(action="approve"))
+    assert resumed.status == "complete"
+    assert any(s.worker == "deploy" for s in resumed.history)

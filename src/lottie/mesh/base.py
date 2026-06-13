@@ -9,10 +9,17 @@ from lottie.core import BaseAgent
 from lottie.core.metrics import RunMetrics
 from lottie.llm import LLMProvider, TokenUsage
 from lottie.memory.base import MemoryClient
-from lottie.mesh.engine import MeshEngine, MeshNode
+from lottie.mesh.engine import MeshEngine, MeshNode, RouteFn
 from lottie.mesh.local import LocalEngine
 from lottie.mesh.router import SupervisorRouter
-from lottie.mesh.schema import MeshInput, MeshOutput, MeshState, RouteDecision
+from lottie.mesh.schema import (
+    ApprovalDecision,
+    MeshInput,
+    MeshOutput,
+    MeshRunResult,
+    MeshState,
+    RouteDecision,
+)
 
 
 class MeshAgent(BaseAgent[MeshInput, MeshOutput]):
@@ -54,16 +61,13 @@ class MeshAgent(BaseAgent[MeshInput, MeshOutput]):
             metrics.cost_usd,
         )
 
-    def _execute(self, data: MeshInput) -> MeshOutput:
+    def _route_fn(self) -> RouteFn:
         def route(state: MeshState) -> RouteDecision:
             return self._router.route(state, self._descriptions)
 
-        result = self._engine.run(
-            MeshState(task=data.task),
-            nodes=self._nodes,
-            route=route,
-            max_steps=data.max_steps,
-        )
+        return route
+
+    def _to_output(self, result: MeshRunResult) -> MeshOutput:
         return MeshOutput(
             final=result.state.final or "",
             history=result.state.history,
@@ -71,3 +75,19 @@ class MeshAgent(BaseAgent[MeshInput, MeshOutput]):
             thread_id=result.thread_id,
             pending=result.pending,
         )
+
+    def _execute(self, data: MeshInput) -> MeshOutput:
+        result = self._engine.run(
+            MeshState(task=data.task),
+            nodes=self._nodes,
+            route=self._route_fn(),
+            max_steps=data.max_steps,
+        )
+        return self._to_output(result)
+
+    def resume(self, thread_id: str, decision: ApprovalDecision) -> MeshOutput:
+        """Continue an interrupted mesh run from its checkpoint."""
+        result = self._engine.resume(
+            thread_id, nodes=self._nodes, route=self._route_fn(), decision=decision
+        )
+        return self._to_output(result)
