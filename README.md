@@ -6,7 +6,7 @@ Provider-agnostic multi-agent AI orchestration framework with shared knowledge a
 
 > Works with Claude Code, Cursor, Codex, and any LLM. Swap Claude for GPT-4o with a single config change — no code changes, ever.
 
-**Status:** Phase 2 — Agent Mesh core shipped (`v0.3.0`): a supervisor `BaseAgent` routes a task across declared worker agents over typed state (parallel branches, human-in-the-loop, and the LangGraph backend land in Phase 3). Phases 0–1 (foundations, knowledge core) shipped; Phase 4 (MCP stdio) landed earlier on `feat/mcp-stdio`.
+**Status:** Phase 3 — Mesh Hardening shipped (`v0.4.0`): a `LangGraphEngine` (optional `[mesh]` extra) adds parallel fan-out, human-in-the-loop interrupt/resume, and checkpoint time-travel behind the engine ABC; the hand-rolled `LocalEngine` stays the zero-dep default. Phase 2 (Agent Mesh core, `v0.3.0`), Phases 0–1 (foundations, knowledge core), and the Phase-4 MCP stdio transport all shipped.
 
 ---
 
@@ -79,7 +79,8 @@ lottie serve                               # MCP stdio server (one tool per agen
 | `v0.1.0` | 0 — Foundations | BaseAgent/Skill, CLI, generators, MockLLM | ✅ |
 | `v0.2.0` | 1 — Knowledge Core | ChromaDB, RAG pipeline, knowledge graph | ✅ |
 | `v0.3.0` | 2 — Agent Mesh | Supervisor→worker mesh, conditional routing, typed state (parallel/HITL/time-travel → Phase 3) | ✅ |
-| `v0.4.0` | 3 — Governance | audit trail, policy engine, OpenTelemetry | ◻ |
+| `v0.4.0` | 3 — Mesh Hardening | LangGraph backend, parallel fork/join, human-in-the-loop, time-travel (opt-in `[mesh]` extra) | ✅ |
+| _later_ | Governance | audit trail, policy engine, OpenTelemetry | ◻ |
 | `v0.5.0` | 4 — Integration | MCP server, OpenAI-compat API, REST | 🚧 MCP stdio |
 | `v1.0.0` | 5 — Public SDK | docs site, plugin system, demos | ◻ |
 
