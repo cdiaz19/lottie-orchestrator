@@ -80,9 +80,6 @@ class ChromaVectorStore(VectorStore):
         )
         self._collection: Any = self._open_collection()
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
 
     def _open_collection(self) -> Any:
         """Get or create the collection and assert it uses cosine distance.
@@ -105,9 +102,6 @@ class ChromaVectorStore(VectorStore):
             )
         return coll
 
-    # ------------------------------------------------------------------
-    # VectorStore interface
-    # ------------------------------------------------------------------
 
     def add(self, items: list[EmbeddedChunk]) -> None:
         """Persist *items* to the Chroma collection.

@@ -77,10 +77,6 @@ class InMemoryVectorStore(VectorStore):
     def __init__(self) -> None:
         self._chunks: list[EmbeddedChunk] = []
 
-    # ------------------------------------------------------------------
-    # VectorStore interface
-    # ------------------------------------------------------------------
-
     def add(self, items: list[EmbeddedChunk]) -> None:
         """Append *items* to the store (no deduplication)."""
         self._chunks.extend(items)
@@ -133,7 +129,6 @@ class InMemoryVectorStore(VectorStore):
         for item in self._chunks:
             # --- dimension guard ---
             if len(item.embedding.vector) != query_dim:
-                # Skip silently; see module docstring for rationale.
                 continue
 
             # --- layer filter ---

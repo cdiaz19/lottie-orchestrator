@@ -31,9 +31,6 @@ from lottie.knowledge.schema import (  # noqa: E402
 from lottie.knowledge.store import VectorStore  # noqa: E402
 from lottie.knowledge.store.chroma import ChromaVectorStore  # noqa: E402
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
 
 _PROVIDER = MockEmbeddingProvider(dim=16)
 
@@ -69,10 +66,6 @@ def make_chunk(
     )
 
 
-# ---------------------------------------------------------------------------
-# ABC compliance
-# ---------------------------------------------------------------------------
-
 
 class TestChromaIsVectorStore:
     """ChromaVectorStore must satisfy the VectorStore ABC."""
@@ -84,10 +77,6 @@ class TestChromaIsVectorStore:
         store = ChromaVectorStore(tmp_path)
         assert isinstance(store, VectorStore)
 
-
-# ---------------------------------------------------------------------------
-# Basic query — smoke test with lossless round-trip verification
-# ---------------------------------------------------------------------------
 
 
 class TestBasicQuery:
@@ -154,10 +143,6 @@ class TestBasicQuery:
         assert len(hits) == 2
 
 
-# ---------------------------------------------------------------------------
-# count and clear
-# ---------------------------------------------------------------------------
-
 
 class TestCountAndClear:
     """count() and clear() contract."""
@@ -196,10 +181,6 @@ class TestCountAndClear:
         assert store.count() == 0
 
 
-# ---------------------------------------------------------------------------
-# k <= 0
-# ---------------------------------------------------------------------------
-
 
 class TestKEdgeCases:
     def test_k_zero_returns_empty(self, tmp_path: Path) -> None:
@@ -212,10 +193,6 @@ class TestKEdgeCases:
         store.add([make_chunk("a", "apple")])
         assert store.query(_embed("apple"), k=-1) == []
 
-
-# ---------------------------------------------------------------------------
-# Layer filter (server-side)
-# ---------------------------------------------------------------------------
 
 
 class TestLayerFilter:
@@ -280,10 +257,6 @@ class TestLayerFilter:
         hits = store.query(_embed("context"), k=10, layers=[])
         assert len(hits) == 2
 
-
-# ---------------------------------------------------------------------------
-# Tag filter (client-side)
-# ---------------------------------------------------------------------------
 
 
 class TestTagFilter:
@@ -364,10 +337,6 @@ class TestTagFilter:
         assert {h.chunk.id for h in hits_empty} == {h.chunk.id for h in hits_none}
 
 
-# ---------------------------------------------------------------------------
-# Combined layer + tag filter
-# ---------------------------------------------------------------------------
-
 
 class TestCombinedFilters:
     def test_layer_and_tag_combined(self, tmp_path: Path) -> None:
@@ -382,11 +351,6 @@ class TestCombinedFilters:
         )
         chunk_ids = {h.chunk.id for h in hits}
         assert chunk_ids == {"g-auth"}
-
-
-# ---------------------------------------------------------------------------
-# Score sanity
-# ---------------------------------------------------------------------------
 
 
 class TestScores:
@@ -410,11 +374,6 @@ class TestScores:
         for h in hits:
             # Cosine similarity is in [-1, 1]; allow small floating-point slack
             assert -1.0 - 1e-6 <= h.score <= 1.0 + 1e-6
-
-
-# ---------------------------------------------------------------------------
-# F2 — cosine space verification
-# ---------------------------------------------------------------------------
 
 
 class TestCosineSpaceVerification:
@@ -452,11 +411,6 @@ class TestCosineSpaceVerification:
             ChromaVectorStore(tmp_path)
 
 
-# ---------------------------------------------------------------------------
-# F4 — reserved key guard
-# ---------------------------------------------------------------------------
-
-
 class TestReservedKeyGuard:
     """add() must reject chunk.metadata containing '_chunk_json'."""
 
@@ -474,11 +428,6 @@ class TestReservedKeyGuard:
         item = make_chunk("y", "text", tags="safe")
         store.add([item])  # must not raise
         assert store.count() == 1
-
-
-# ---------------------------------------------------------------------------
-# Factory
-# ---------------------------------------------------------------------------
 
 
 class TestBuildVectorStore:
