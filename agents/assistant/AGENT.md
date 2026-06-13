@@ -1,7 +1,9 @@
 # AssistantMesh
 
 ## Role
-Reference **mesh** agent: a `MeshAgent` subclass (from `lottie.mesh`) that routes a single task between two existing workers — `research` (knowledge-grounded) and `critic` (reviewer). The injected LLM acts as the **supervisor**, picking the next worker at each step; the engine loops until the supervisor returns `FINISH` or `max_steps` is reached.
+Reference **mesh** agent: a `MeshAgent` subclass (from `lottie.mesh`) that routes a single task between three existing workers — `research` (knowledge-grounded), `critic` (reviewer) and `publisher` (release finalizer). The injected LLM acts as the **supervisor**, picking the next worker at each step; the engine loops until the supervisor returns `FINISH` or `max_steps` is reached.
+
+The `publisher` worker is wired as a **human-in-the-loop (HITL)** worker via `interrupt_before` (see below): routing to it pauses the run for human approval before it executes.
 
 ## Input
 
@@ -27,6 +29,9 @@ Reference **mesh** agent: a `MeshAgent` subclass (from `lottie.mesh`) that route
 workers:
   - research
   - critic
+  - publisher
+interrupt_before:
+  - publisher
 ```
 
 The `workers:` list in `config.yaml` is the **capability allow-set**: it is exactly the routing roster the supervisor may pick from. It must match the keys of `_DESCRIPTIONS` in `agent.py`. The supervisor router (`SupervisorRouter`) only ever returns one of these worker names or `FINISH` — anything else is a capability violation.
@@ -35,6 +40,23 @@ The `workers:` list in `config.yaml` is the **capability allow-set**: it is exac
 |---|---|
 | `research` | Retrieves and synthesizes knowledge to answer the task. |
 | `critic` | Reviews the latest draft and suggests one concrete improvement. |
+| `publisher` | Publishes/finalizes the answer for release (HITL — see below). |
+
+## Human-in-the-Loop (`interrupt_before`)
+
+The `interrupt_before:` list in `config.yaml` names workers that **pause for human approval** before they run. `publisher` is wired this way. When `interrupt_before` is non-empty, `from_project` builds the mesh on the `LangGraphEngine` (which checkpoints state) instead of the default `LocalEngine`; if the `[mesh]` extra is not installed, it raises a clear `MeshError`. `interrupt_before` must be a subset of the mesh's worker adapters (`_DESCRIPTIONS`), enforced by the same consistency guard as `workers`.
+
+When the supervisor routes to `publisher`, the engine pauses **before** the node runs and `mesh.run(...)` returns `MeshOutput` with `status="interrupted"` and a populated `pending` (`PendingApproval(worker="publisher", ...)`). No publish LLM call has happened yet. The caller then resumes:
+
+```python
+out = mesh.run(AssistantInput(task="write an overview"))
+if out.status == "interrupted":
+    resumed = mesh.resume(out.thread_id, ApprovalDecision(action="approve"))
+    # action="approve" runs the publisher node and continues the loop;
+    # action="reject" records the rejection without executing the worker.
+```
+
+Running the assistant with the default `config.yaml` (which sets `interrupt_before: [publisher]`) therefore **pauses for approval** whenever the supervisor decides to publish.
 
 ## How Routing Works
 
