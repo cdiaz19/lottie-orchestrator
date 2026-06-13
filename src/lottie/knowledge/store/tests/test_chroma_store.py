@@ -31,7 +31,6 @@ from lottie.knowledge.schema import (  # noqa: E402
 from lottie.knowledge.store import VectorStore  # noqa: E402
 from lottie.knowledge.store.chroma import ChromaVectorStore  # noqa: E402
 
-
 _PROVIDER = MockEmbeddingProvider(dim=16)
 
 
