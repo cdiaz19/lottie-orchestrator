@@ -9,5 +9,3 @@ workers:
   - research
   - critic
   - publisher
-interrupt_before:
-  - publisher
