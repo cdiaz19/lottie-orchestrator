@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from lottie.mesh.checkpoint import build_checkpointer
 from lottie.mesh.engine import MeshEngine, MeshNode, RouteFn
@@ -103,7 +104,7 @@ class LangGraphEngine(MeshEngine):
         thread_id: str | None = None,
     ) -> MeshRunResult:
         graph = self._build(nodes, route)
-        tid = thread_id or "default"
+        tid = thread_id or uuid4().hex
         config = {"configurable": {"thread_id": tid}, "recursion_limit": max_steps * 3}
         graph.invoke(initial, config)
         return self._snapshot(graph, config, tid)

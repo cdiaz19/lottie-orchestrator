@@ -76,3 +76,19 @@ def test_langgraph_engine_lists_checkpoint_history() -> None:
     snapshots = eng.history("hist1", nodes=nodes, route=_scripted_route([]))
     assert len(snapshots) >= 1
     assert any(s.history for s in snapshots)  # some checkpoint captured the worker step
+
+
+def test_sequential_runs_do_not_contaminate_checkpoint() -> None:
+    from lottie.mesh.langgraph_engine import LangGraphEngine
+
+    eng = LangGraphEngine()  # reused across two runs (mimics AgentService's cached instance)
+    nodes = {"a": _node("a")}
+
+    r1 = eng.run(MeshState(task="t1"), nodes=nodes, route=_scripted_route(["a", FINISH]), max_steps=8)
+    r2 = eng.run(MeshState(task="t2"), nodes=nodes, route=_scripted_route(["a", FINISH]), max_steps=8)
+
+    # each run is isolated: run 2 must NOT inherit run 1's history
+    assert [s.worker for s in r1.state.history] == ["a"]
+    assert [s.worker for s in r2.state.history] == ["a"]
+    # distinct auto-generated thread ids
+    assert r1.thread_id != r2.thread_id
