@@ -26,6 +26,7 @@ chroma = ["chromadb>=1.5.9"]
 serve = ["mcp>=1.27.2"]
 mesh = [
     "langgraph>=1.2.4",
+    "langgraph-checkpoint-sqlite>=2.0.0",
 ]
 
 [project.scripts]
