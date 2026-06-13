@@ -76,7 +76,10 @@ def resume(
         str,
         typer.Option(
             "--input",
-            help="JSON object of edited input to apply on approve (default: none).",
+            help=(
+                "Reserved: edited input (JSON object) for an approved worker. "
+                "NOTE: not yet applied on approve — see follow-ups."
+            ),
         ),
     ] = "",
 ) -> None:

@@ -84,8 +84,12 @@ def test_sequential_runs_do_not_contaminate_checkpoint() -> None:
     eng = LangGraphEngine()  # reused across two runs (mimics AgentService's cached instance)
     nodes = {"a": _node("a")}
 
-    r1 = eng.run(MeshState(task="t1"), nodes=nodes, route=_scripted_route(["a", FINISH]), max_steps=8)
-    r2 = eng.run(MeshState(task="t2"), nodes=nodes, route=_scripted_route(["a", FINISH]), max_steps=8)
+    r1 = eng.run(
+        MeshState(task="t1"), nodes=nodes, route=_scripted_route(["a", FINISH]), max_steps=8
+    )
+    r2 = eng.run(
+        MeshState(task="t2"), nodes=nodes, route=_scripted_route(["a", FINISH]), max_steps=8
+    )
 
     # each run is isolated: run 2 must NOT inherit run 1's history
     assert [s.worker for s in r1.state.history] == ["a"]
