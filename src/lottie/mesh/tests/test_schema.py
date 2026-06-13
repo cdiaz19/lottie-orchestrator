@@ -100,3 +100,11 @@ def test_mesh_output_status_defaults() -> None:
 
     o = MeshOutput(final="f")
     assert o.status == "complete" and o.thread_id is None and o.pending is None
+
+
+def test_agent_config_interrupt_before_field() -> None:
+    from lottie.project.config import AgentConfig
+
+    cfg = AgentConfig(provider="mock/x", workers=["a", "b"], interrupt_before=["b"])
+    assert cfg.interrupt_before == ["b"]
+    assert AgentConfig(provider="mock/x").interrupt_before == []

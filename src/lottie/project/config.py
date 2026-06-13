@@ -34,6 +34,7 @@ class AgentConfig(BaseModel):
     capabilities: list[str] = []
     policies: list[str] = []
     workers: list[str] = []  # mesh routing allow-set (capability enforcement)
+    interrupt_before: list[str] = []  # mesh workers that pause for human approval (HITL)
 
 
 def find_project_root(start: Path | None = None) -> Path:
