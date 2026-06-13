@@ -25,7 +25,6 @@ class MeshAgent(BaseAgent[MeshInput, MeshOutput]):
         nodes: Mapping[str, MeshNode],
         descriptions: Mapping[str, str],
         engine: MeshEngine | None = None,
-        max_steps: int = 8,
         name: str | None = None,
         memory: MemoryClient | None = None,
         enable_benchmarks: bool | None = None,
@@ -41,7 +40,6 @@ class MeshAgent(BaseAgent[MeshInput, MeshOutput]):
         self._nodes = dict(nodes)
         self._descriptions = dict(descriptions)
         self._engine = engine or LocalEngine()
-        self._max_steps = max_steps
         self._router = SupervisorRouter(self.complete)
 
     def _accumulate(self, metrics: RunMetrics | None) -> None:
@@ -64,6 +62,6 @@ class MeshAgent(BaseAgent[MeshInput, MeshOutput]):
             MeshState(task=data.task),
             nodes=self._nodes,
             route=route,
-            max_steps=data.max_steps or self._max_steps,
+            max_steps=data.max_steps,
         )
         return MeshOutput(final=final.final or "", history=final.history)
