@@ -41,8 +41,10 @@ src/lottie/
   security/     — InputSanitizerSkill, SecretDetectionSkill, PromptInjectionScanSkill,
                   OutputValidationSkill, CapabilityEnforcerSkill, CodeSecurityScanSkill
   knowledge/    — manifest, YAML loader, networkx graph, GraphIngestSkill
-  mesh/         — MeshAgent, MeshEngine (LocalEngine), SupervisorRouter, mesh schemas
-                  (a mesh is itself a BaseAgent — reuses run/serve/benchmark)
+  mesh/         — MeshAgent, MeshEngine (LocalEngine default; LangGraphEngine via [mesh] extra),
+                  SupervisorRouter, checkpointer, mesh schemas. A mesh is itself a BaseAgent
+                  (reuses run/serve/benchmark). LangGraphEngine adds parallel fan-out, HITL
+                  interrupt/resume, and checkpoint time-travel; LocalEngine stays zero-dep.
   governance/   — audit logger, policy engine, cost tracker
 agents/         — user-defined agents (each a self-contained module)
 skills/         — user-defined skills (stateless, deterministic)

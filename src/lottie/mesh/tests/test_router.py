@@ -38,3 +38,15 @@ def test_router_rejects_undeclared_worker() -> None:
     router = SupervisorRouter(_complete_returning("hacker"))
     with pytest.raises(CapabilityViolation):
         router.route(MeshState(task="t"), _WORKERS)
+
+
+def test_router_parses_parallel_fanout() -> None:
+    router = SupervisorRouter(_complete_returning("research, critic"))
+    decision = router.route(MeshState(task="t"), _WORKERS)
+    assert sorted(decision.parallel) == ["critic", "research"]
+
+
+def test_router_parallel_rejects_undeclared() -> None:
+    router = SupervisorRouter(_complete_returning("research, hacker"))
+    with pytest.raises(CapabilityViolation):
+        router.route(MeshState(task="t"), _WORKERS)

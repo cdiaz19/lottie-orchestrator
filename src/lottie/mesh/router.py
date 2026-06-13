@@ -11,9 +11,9 @@ from lottie.mesh.schema import FINISH, MeshState, RouteDecision
 CompleteFn = Callable[[list[Message]], LLMResponse]
 
 _SYSTEM = (
-    "You are a supervisor routing a task to the single best-suited worker. "
-    "Reply with ONLY the worker name, or FINISH when the task is complete. "
-    "Never reply with anything else."
+    "You are a supervisor routing a task to the best-suited worker(s). "
+    "Reply with ONE worker name, several comma-separated names to run in parallel, "
+    "or FINISH when the task is complete. Never reply with anything else."
 )
 
 
@@ -30,11 +30,17 @@ class SupervisorRouter:
             f"Task: {state.task}\n\n"
             f"Workers:\n{roster}\n\n"
             f"Work done so far:\n{done}\n\n"
-            "Next worker (or FINISH):"
+            "Reply with ONE worker name, several comma-separated names to run them in "
+            "parallel, or FINISH:"
         )
         raw = self._complete(
             [Message(role="system", content=_SYSTEM), Message(role="user", content=user)]
         ).content.strip()
+        names = [p.strip() for p in raw.split(",") if p.strip()]
+        if len(names) > 1:
+            resolved = [self._resolve(n, workers) for n in names]
+            # Sentinel: parallel fan-out sets next=FINISH; the engine reads `parallel` first.
+            return RouteDecision(next=FINISH, parallel=resolved)
         return RouteDecision(next=self._resolve(raw, workers))
 
     @staticmethod

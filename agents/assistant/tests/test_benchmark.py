@@ -53,7 +53,7 @@ def test_benchmark_assistant_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     (kb / "ma.md").write_text(_DOC, encoding="utf-8")
 
     repo = Path(__file__).resolve().parents[3]
-    for unit in ("assistant", "critic", "research"):
+    for unit in ("assistant", "critic", "publisher", "research"):
         shutil.copytree(repo / "agents" / unit, demo / "agents" / unit, dirs_exist_ok=True)
     for skill in ("retrieval", "summarizer"):
         shutil.copytree(repo / "skills" / skill, demo / "skills" / skill, dirs_exist_ok=True)
