@@ -70,3 +70,33 @@ def test_mesh_state_history_still_appends_via_with_step() -> None:
 
     s = MeshState(task="t").with_step(StepResult(worker="a", result="x"))
     assert [h.worker for h in s.history] == ["a"]
+
+
+def test_run_result_and_hitl_models() -> None:
+    from lottie.mesh.schema import (
+        ApprovalDecision,
+        MeshRunResult,
+        MeshState,
+        PendingApproval,
+    )
+
+    r = MeshRunResult(state=MeshState(task="t"))
+    assert r.status == "complete" and r.thread_id is None and r.pending is None
+    p = PendingApproval(worker="deploy", proposed_input={"k": "v"})
+    assert p.worker == "deploy"
+    assert ApprovalDecision(action="approve").edited_input == {}
+    assert ApprovalDecision(action="reject").action == "reject"
+
+
+def test_route_decision_parallel_default_empty() -> None:
+    from lottie.mesh.schema import RouteDecision
+
+    assert RouteDecision(next="a").parallel == []
+    assert RouteDecision(next="FINISH", parallel=["a", "b"]).parallel == ["a", "b"]
+
+
+def test_mesh_output_status_defaults() -> None:
+    from lottie.mesh.schema import MeshOutput
+
+    o = MeshOutput(final="f")
+    assert o.status == "complete" and o.thread_id is None and o.pending is None
