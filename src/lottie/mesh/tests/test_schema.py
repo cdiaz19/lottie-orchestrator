@@ -49,3 +49,10 @@ def test_agent_config_has_workers_field() -> None:
     assert cfg.workers == ["research", "critic"]
     # default empty for non-mesh agents
     assert AgentConfig(provider="mock/x").workers == []
+
+
+def test_package_exports() -> None:
+    import lottie.mesh as m
+
+    for sym in ("MeshAgent", "MeshInput", "MeshOutput", "MeshState", "LocalEngine"):
+        assert hasattr(m, sym), sym
