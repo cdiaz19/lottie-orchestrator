@@ -30,6 +30,12 @@ class AssistantMesh(MeshAgent):
         config: AgentConfig,
         enable_benchmarks: bool | None = None,
     ) -> AssistantMesh:
+        declared = set(config.workers)
+        if declared and declared != set(_DESCRIPTIONS):
+            raise ValueError(
+                f"assistant config.yaml workers {sorted(declared)} "
+                f"do not match the mesh's worker adapters {sorted(_DESCRIPTIONS)}"
+            )
         research = ResearchAgent.from_project(
             llm=llm, root=root, config=config, enable_benchmarks=enable_benchmarks
         )
