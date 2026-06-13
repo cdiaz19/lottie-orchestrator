@@ -41,3 +41,25 @@ def test_parallel_fanout_merges_all_workers() -> None:
     )
     workers = sorted(s.worker for s in result.state.history)
     assert workers == ["a", "b"]  # both ran, both merged
+
+
+def test_sequential_history_order_preserved_non_alphabetical() -> None:
+    from lottie.mesh.langgraph_engine import LangGraphEngine
+
+    # sequential route in NON-alphabetical order: b then a
+    calls = iter([RouteDecision(next="b"), RouteDecision(next="a"), RouteDecision(next=FINISH)])
+
+    def route(state: MeshState) -> RouteDecision:
+        return next(calls)
+
+    result = LangGraphEngine().run(
+        MeshState(task="t"),
+        nodes={"a": _node("a"), "b": _node("b")},
+        route=route,
+        max_steps=8,
+        thread_id="seq1",
+    )
+    # sequential order MUST be preserved (b ran first), NOT sorted to [a, b]
+    assert [s.worker for s in result.state.history] == ["b", "a"]
+    # steps stamped monotonically
+    assert [s.step for s in result.state.history] == [0, 1]

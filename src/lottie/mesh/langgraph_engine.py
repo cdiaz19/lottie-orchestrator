@@ -69,7 +69,14 @@ class LangGraphEngine(MeshEngine):
     def _wrap(node: MeshNode) -> Any:
         def lg_node(state: MeshState) -> dict[str, Any]:
             new_state = node(state)
-            delta = new_state.history[len(state.history):]
+            # Stamp `step` monotonically to the absolute position in history so the
+            # `(step, worker)` merge sort preserves sequential order and only
+            # tie-breaks PARALLEL siblings (which share a base step) by worker name.
+            base = len(state.history)
+            delta = [
+                s.model_copy(update={"step": base + i})
+                for i, s in enumerate(new_state.history[base:])
+            ]
             update: dict[str, Any] = {"history": delta}
             # Only write `final` when set: parallel branches share the single-value
             # `final` channel, so emitting None from every branch would collide.
