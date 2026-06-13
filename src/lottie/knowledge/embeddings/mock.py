@@ -41,9 +41,6 @@ class MockEmbeddingProvider(EmbeddingProvider):
         """Embed each text deterministically and return L2-normalised `Embedding` objects."""
         return [self._embed_one(text) for text in texts]
 
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
 
     def _raw_bytes(self, text: str) -> bytes:
         """Generate exactly ``self._dim`` deterministic bytes from *text*.
