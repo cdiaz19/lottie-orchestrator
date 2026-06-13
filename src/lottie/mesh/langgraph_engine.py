@@ -13,6 +13,7 @@ from lottie.mesh.schema import FINISH, ApprovalDecision, MeshRunResult, MeshStat
 
 try:
     from langgraph.graph import END, START, StateGraph
+    from langgraph.types import Send
 
     _HAS_LANGGRAPH = True
 except ImportError:
@@ -45,7 +46,7 @@ class LangGraphEngine(MeshEngine):
         def choose(state: MeshState) -> Any:
             decision = route(state)
             if decision.parallel:
-                return list(decision.parallel)
+                return [Send(name, state) for name in decision.parallel]
             return END if decision.next == FINISH else decision.next
 
         builder.add_node("supervisor", supervisor)
@@ -69,7 +70,12 @@ class LangGraphEngine(MeshEngine):
         def lg_node(state: MeshState) -> dict[str, Any]:
             new_state = node(state)
             delta = new_state.history[len(state.history):]
-            return {"history": delta, "final": new_state.final}
+            update: dict[str, Any] = {"history": delta}
+            # Only write `final` when set: parallel branches share the single-value
+            # `final` channel, so emitting None from every branch would collide.
+            if new_state.final is not None:
+                update["final"] = new_state.final
+            return update
 
         return lg_node
 
@@ -89,8 +95,9 @@ class LangGraphEngine(MeshEngine):
         snap = graph.get_state(config)
         state = MeshState.model_validate(snap.values)
         last = state.history[-1].result if state.history else ""
+        ordered = sorted(state.history, key=lambda s: (s.step, s.worker))
         return MeshRunResult(
-            state=state.model_copy(update={"final": state.final or last}),
+            state=state.model_copy(update={"history": ordered, "final": state.final or last}),
             status="complete",
             thread_id=tid,
         )
