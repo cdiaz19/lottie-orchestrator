@@ -417,7 +417,7 @@ Full pipeline smoke tests. Run only on release tags. 3 scenarios per phase miles
 |---|---|---|
 | `v0.1.0` | Phase 0 | BaseAgent, BaseSkill, CLI, generators, MockLLMProvider |
 | `v0.2.0` | Phase 1 | Knowledge Core — ChromaDB, RAG pipeline, policy store ✅ (delivered) |
-| `v0.3.0` | Phase 2 | Agent Mesh — LangGraph engine, supervisor, parallel runner |
+| `v0.3.0` | Phase 2 | Agent Mesh — supervisor→worker routing, conditional edges, typed state ✅ (core delivered; parallel/HITL/time-travel + LangGraph backend → Phase 3) |
 | `v0.4.0` | Phase 3 | Governance — audit trail, policy engine, OpenTelemetry |
 | `v0.5.0` | Phase 4 | Integration Layer — MCP server, OpenAI-compat API |
 | `v1.0.0` | Phase 5 | Public SDK, docs site, plugin system, demo projects |

@@ -41,6 +41,8 @@ src/lottie/
   security/     — InputSanitizerSkill, SecretDetectionSkill, PromptInjectionScanSkill,
                   OutputValidationSkill, CapabilityEnforcerSkill, CodeSecurityScanSkill
   knowledge/    — manifest, YAML loader, networkx graph, GraphIngestSkill
+  mesh/         — MeshAgent, MeshEngine (LocalEngine), SupervisorRouter, mesh schemas
+                  (a mesh is itself a BaseAgent — reuses run/serve/benchmark)
   governance/   — audit logger, policy engine, cost tracker
 agents/         — user-defined agents (each a self-contained module)
 skills/         — user-defined skills (stateless, deterministic)
@@ -70,6 +72,7 @@ tests/
 | `BaseSkill` | `lottie.core` | All skills extend this — typed input/output, auto-benchmarked |
 | `SecurityGate` | `lottie.security` | Input + output security checkpoint — wraps every agent run |
 | `KnowledgeManifest` | `lottie.knowledge` | YAML manifest + networkx graph builder |
+| `MeshAgent` | `lottie.mesh` | Supervisor→worker mesh; a BaseAgent that routes a task across declared workers |
 
 ---
 

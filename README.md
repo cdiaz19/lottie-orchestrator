@@ -6,7 +6,7 @@ Provider-agnostic multi-agent AI orchestration framework with shared knowledge a
 
 > Works with Claude Code, Cursor, Codex, and any LLM. Swap Claude for GPT-4o with a single config change — no code changes, ever.
 
-**Status:** Phase 1 — Knowledge Core shipped (`v0.2.0`). Phase 4 (Integration Layer) in progress: first transport — MCP stdio server — on branch `feat/mcp-stdio`.
+**Status:** Phase 2 — Agent Mesh core shipped (`v0.3.0`): a supervisor `BaseAgent` routes a task across declared worker agents over typed state (parallel branches, human-in-the-loop, and the LangGraph backend land in Phase 3). Phases 0–1 (foundations, knowledge core) shipped; Phase 4 (MCP stdio) landed earlier on `feat/mcp-stdio`.
 
 ---
 
@@ -78,7 +78,7 @@ lottie serve                               # MCP stdio server (one tool per agen
 |---|---|---|---|
 | `v0.1.0` | 0 — Foundations | BaseAgent/Skill, CLI, generators, MockLLM | ✅ |
 | `v0.2.0` | 1 — Knowledge Core | ChromaDB, RAG pipeline, knowledge graph | ✅ |
-| `v0.3.0` | 2 — Agent Mesh | LangGraph engine, supervisor, parallel runner | ◻ |
+| `v0.3.0` | 2 — Agent Mesh | Supervisor→worker mesh, conditional routing, typed state (parallel/HITL/time-travel → Phase 3) | ✅ |
 | `v0.4.0` | 3 — Governance | audit trail, policy engine, OpenTelemetry | ◻ |
 | `v0.5.0` | 4 — Integration | MCP server, OpenAI-compat API, REST | 🚧 MCP stdio |
 | `v1.0.0` | 5 — Public SDK | docs site, plugin system, demos | ◻ |
