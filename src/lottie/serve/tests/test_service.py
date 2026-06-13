@@ -241,6 +241,19 @@ def test_run_agent_from_project_failure_raises_load_error(
     assert "bogus" in str(exc_info.value)
 
 
+def test_resume_agent_on_non_mesh_raises_execution_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A plain agent has no `resume` — resume_agent must reject it cleanly."""
+    from lottie.mesh.schema import ApprovalDecision
+
+    demo = _scaffold(tmp_path, monkeypatch)
+    _mock_provider(monkeypatch)
+    svc = AgentService(demo)
+    with pytest.raises(AgentExecutionError, match="does not support resume"):
+        svc.resume_agent("echo", "t1", ApprovalDecision(action="approve"))
+
+
 def test_service_surfaces_interrupted_and_resumes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -305,3 +318,9 @@ def test_service_surfaces_interrupted_and_resumes(
     assert res.thread_id
     resumed = svc.resume_agent("gate", res.thread_id, ApprovalDecision(action="approve"))
     assert resumed.status == "complete"
+
+    # An unknown thread makes the underlying resume() raise; the service must
+    # translate any such failure into a single typed AgentExecutionError.
+    with pytest.raises(AgentExecutionError) as exc_info:
+        svc.resume_agent("gate", "no-such-thread", ApprovalDecision(action="approve"))
+    assert exc_info.value.__cause__ is not None

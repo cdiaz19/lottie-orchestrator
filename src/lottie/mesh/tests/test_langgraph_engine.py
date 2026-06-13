@@ -13,6 +13,8 @@ pytestmark = pytest.mark.skipif(not _HAS_LANGGRAPH, reason="needs [mesh] extra")
 
 from collections.abc import Callable  # noqa: E402
 
+from lottie.mesh.checkpoint import build_checkpointer  # noqa: E402
+from lottie.mesh.errors import MeshError  # noqa: E402
 from lottie.mesh.local import LocalEngine  # noqa: E402
 from lottie.mesh.schema import (  # noqa: E402
     FINISH,
@@ -28,6 +30,11 @@ def _node(name: str) -> Callable[[MeshState], MeshState]:
         return state.with_step(StepResult(worker=name, result=f"{name}:done"))
 
     return _run
+
+
+def test_build_checkpointer_rejects_unknown_kind() -> None:
+    with pytest.raises(MeshError, match="unknown checkpointer kind"):
+        build_checkpointer("bogus")
 
 
 def _scripted_route(script: list[str]) -> Callable[[MeshState], RouteDecision]:
