@@ -29,3 +29,14 @@ def test_mesh_io_models() -> None:
     assert MeshInput(task="t").max_steps == 8
     out = MeshOutput(final="done", history=[StepResult(worker="critic", result="ok")])
     assert out.final == "done" and out.history[0].worker == "critic"
+
+
+def test_mesh_errors_hierarchy() -> None:
+    from lottie.mesh.errors import (
+        CapabilityViolation,
+        MeshError,
+        MeshStepLimitExceeded,
+    )
+
+    assert issubclass(CapabilityViolation, MeshError)
+    assert issubclass(MeshStepLimitExceeded, MeshError)
