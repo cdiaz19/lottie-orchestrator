@@ -3,7 +3,7 @@
 ## Role
 A terse **publisher** worker for the `assistant` mesh. Given a finished draft, it publishes/finalizes the text — returning the clean, release-ready final answer. It is knowledge-free and stateless: no knowledge layer, no skills, no `from_project` factory.
 
-In the `assistant` mesh, `publisher` is wired as an **`interrupt_before` HITL worker**: routing to it pauses the run for human approval before the publish LLM call ever executes.
+In the `assistant` mesh, `publisher` is a routable worker that **can optionally** be wired as an **`interrupt_before` HITL worker**: when enabled, routing to it pauses the run for human approval before the publish LLM call executes. HITL is opt-in (requires the `[mesh]` extra / `LangGraphEngine`); by default the assistant runs on `LocalEngine` and `publisher` runs without a pause.
 
 ## Input
 
@@ -41,7 +41,7 @@ _None._ The agent makes no skill calls — `capabilities` is empty.
 
 ## Role in the Mesh
 
-`PublisherAgent` is a worker node in the `assistant` mesh, listed in that agent's `interrupt_before`. When the supervisor routes to `publisher`, the `LangGraphEngine` pauses **before** the node runs and the mesh returns `status="interrupted"` with a `pending` approval. A human `approve` resumes the checkpoint and runs the single publish LLM call; a `reject` records the rejection without executing the call. The agent itself is unaware of the mesh — it only publishes the text it is handed.
+`PublisherAgent` is a worker node in the `assistant` mesh. If `publisher` is added to that agent's `interrupt_before` (opt-in, needs the `[mesh]` extra), the `LangGraphEngine` pauses **before** the node runs and the mesh returns `status="interrupted"` with a `pending` approval; a human `approve` resumes the checkpoint and runs the single publish LLM call, while a `reject` records the rejection without executing the call. Without `interrupt_before` (the default), `publisher` runs inline like any other worker. The agent itself is unaware of the mesh — it only publishes the text it is handed.
 
 ## Examples
 
