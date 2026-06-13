@@ -14,6 +14,7 @@ from lottie.cli.doctor import doctor
 from lottie.cli.init import init
 from lottie.cli.knowledge import knowledge_app
 from lottie.cli.memory import memory_app
+from lottie.cli.mesh import mesh_app
 from lottie.cli.registry import inspect_app, list_app
 from lottie.cli.run import run
 from lottie.cli.serve import serve
@@ -39,6 +40,7 @@ app.add_typer(create_app, name="create")
 app.add_typer(knowledge_app, name="knowledge")
 app.add_typer(list_app, name="list")
 app.add_typer(memory_app, name="memory")
+app.add_typer(mesh_app, name="mesh")
 app.add_typer(inspect_app, name="inspect")
 app.command("run")(run)
 app.command("serve")(serve)
