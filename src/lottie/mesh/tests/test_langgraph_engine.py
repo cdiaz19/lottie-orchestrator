@@ -59,3 +59,20 @@ def test_langgraph_engine_parity_with_local() -> None:
     assert lg_workers == loc_workers == ["a", "b"]
     assert lg.state.final == loc.state.final == "b:done"
     assert lg.thread_id == "t1"
+
+
+def test_langgraph_engine_lists_checkpoint_history() -> None:
+    from lottie.mesh.langgraph_engine import LangGraphEngine
+
+    eng = LangGraphEngine()
+    nodes = {"a": _node("a")}
+    eng.run(
+        MeshState(task="t"),
+        nodes=nodes,
+        route=_scripted_route(["a", FINISH]),
+        max_steps=8,
+        thread_id="hist1",
+    )
+    snapshots = eng.history("hist1", nodes=nodes, route=_scripted_route([]))
+    assert len(snapshots) >= 1
+    assert any(s.history for s in snapshots)  # some checkpoint captured the worker step

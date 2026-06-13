@@ -34,6 +34,7 @@ class LangGraphEngine(MeshEngine):
         self._checkpoint = checkpoint
         self._root = root
         self._interrupt_before = list(interrupt_before or [])
+        self._saver: Any = None
 
     def _build(self, nodes: Mapping[str, MeshNode], route: RouteFn) -> Any:
         builder = StateGraph(MeshState)
@@ -57,8 +58,11 @@ class LangGraphEngine(MeshEngine):
         for name in nodes:
             builder.add_edge(name, "supervisor")
 
-        saver = build_checkpointer(self._checkpoint, self._root)
-        return builder.compile(checkpointer=saver, interrupt_before=self._interrupt_before or None)
+        if self._saver is None:
+            self._saver = build_checkpointer(self._checkpoint, self._root)
+        return builder.compile(
+            checkpointer=self._saver, interrupt_before=self._interrupt_before or None
+        )
 
     @staticmethod
     def _wrap(node: MeshNode) -> Any:
@@ -90,6 +94,23 @@ class LangGraphEngine(MeshEngine):
             status="complete",
             thread_id=tid,
         )
+
+    def history(
+        self,
+        thread_id: str,
+        *,
+        nodes: Mapping[str, MeshNode],
+        route: RouteFn,
+    ) -> list[MeshState]:
+        """Return the MeshState at each persisted checkpoint for a thread (newest first)."""
+        graph = self._build(nodes, route)
+        config = {"configurable": {"thread_id": thread_id}}
+        states: list[MeshState] = []
+        for snap in graph.get_state_history(config):
+            if not snap.values.get("task"):
+                continue
+            states.append(MeshState.model_validate(snap.values))
+        return states
 
     def resume(
         self,
