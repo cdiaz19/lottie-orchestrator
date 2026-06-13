@@ -1,0 +1,17 @@
+# AssistantMesh eval suite — agents/assistant/evals.yaml
+#
+# Structural (always-true with a mock provider): confirms the mesh runs the
+# supervisor→worker→FINISH loop end-to-end and produces a non-empty `final`.
+# Against a real provider + populated knowledge, expect a substantive answer.
+#
+# LLM call budget for this single case (one shared MockLLMProvider):
+#   route(research), research.complete, summarizer, route(critic),
+#   critic.complete, route(FINISH) = 6 responses.
+cases:
+  - name: research-then-critic produces a final answer
+    input:
+      task: "What are multi-agent AI systems?"
+      max_steps: 8
+    expect:
+      contains:
+        final: ""
