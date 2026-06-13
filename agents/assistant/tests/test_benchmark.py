@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import shutil
 from pathlib import Path
 
@@ -42,8 +41,8 @@ def _seeded_provider(_name: str) -> MockLLMProvider:
 
 
 def test_benchmark_assistant_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    os.environ["LOTTIE_EMBEDDING_MODEL"] = "mock/embed"
-    os.environ["LOTTIE_VECTOR_STORE"] = "memory"
+    monkeypatch.setenv("LOTTIE_EMBEDDING_MODEL", "mock/embed")
+    monkeypatch.setenv("LOTTIE_VECTOR_STORE", "memory")
 
     monkeypatch.chdir(tmp_path)
     runner = CliRunner()
@@ -64,3 +63,6 @@ def test_benchmark_assistant_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     report = benchmark(demo, "assistant", ["mock/x"])
     assert report.agent == "assistant"
     assert report.providers and report.providers[0].cases
+    case = report.providers[0].cases[0]
+    assert case.success, f"benchmark case errored: {case.error}"
+    assert case.passed
