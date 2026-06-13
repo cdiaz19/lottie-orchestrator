@@ -21,3 +21,6 @@ class RunResult(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
     cost_usd: float = 0.0
+    status: str = "complete"
+    thread_id: str | None = None
+    pending: dict[str, object] | None = None
