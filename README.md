@@ -24,15 +24,17 @@ Provider-agnostic multi-agent AI orchestration framework with shared knowledge a
 src/lottie/
   core/         BaseAgent, BaseSkill, registry (auto-instrumented run loop)
   llm/          LLMProvider, MockLLMProvider, litellm adapter
-  cli/          Typer CLI (init, create, run, list, inspect, benchmark, memory, serve)
+  cli/          Typer CLI (init, create, run, list, inspect, benchmark, memory, mesh, serve)
   security/     InputSanitizer, SecretDetection, PromptInjectionScan,
                 OutputValidation, CapabilityEnforcer, CodeSecurityScan
   knowledge/    YAML manifest, networkx graph, embeddings, vector store, ingest
+  mesh/         MeshAgent, MeshEngine ABC (LocalEngine default; LangGraphEngine
+                via [mesh] extra), SupervisorRouter, checkpointer
   serve/        transport-agnostic AgentService + SecurityGate; MCP stdio transport
   governance/   audit logger, policy engine, cost tracker
 ```
 
-Key abstractions: `LLMProvider` (swap providers), `BaseAgent` / `BaseSkill` (typed, auto-benchmarked), `SecurityGate` (input/output chokepoint on every run), `AgentService` (transport-agnostic serving core), `KnowledgeManifest` (YAML + graph).
+Key abstractions: `LLMProvider` (swap providers), `BaseAgent` / `BaseSkill` (typed, auto-benchmarked), `SecurityGate` (input/output chokepoint on every run), `MeshAgent` (supervisor→worker mesh; itself a `BaseAgent`), `AgentService` (transport-agnostic serving core), `KnowledgeManifest` (YAML + graph).
 
 ## Quickstart
 
@@ -51,6 +53,18 @@ lottie knowledge list               # list documents in the manifest
 lottie memory impact <file>         # what breaks if this is deprecated?
 lottie memory audit                 # cycles, orphans, stale deps
 ```
+
+### Run a multi-agent mesh
+
+A mesh is itself an agent: a supervisor routes each task across declared workers, with token/cost rolled up. The default `LocalEngine` is zero-dep; the optional `[mesh]` extra swaps in a `LangGraphEngine` for parallel fan-out, human-in-the-loop interrupt/resume, and checkpoint time-travel.
+
+```bash
+lottie run assistant --input '{"query": "research multi-agent systems"}'        # mesh runs like any agent
+lottie mesh resume --agent assistant --thread-id <id> --decision approve         # continue a paused HITL run
+lottie mesh history --agent assistant --thread-id <id>                           # report available checkpoint history
+```
+
+> HITL resume/history need the `[mesh]` extra. The default in-memory checkpointer is process-local; durable cross-process resume uses the sqlite checkpointer (on the roadmap).
 
 ### Serve agents over MCP
 
