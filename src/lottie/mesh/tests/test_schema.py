@@ -108,3 +108,10 @@ def test_agent_config_interrupt_before_field() -> None:
     cfg = AgentConfig(provider="mock/x", workers=["a", "b"], interrupt_before=["b"])
     assert cfg.interrupt_before == ["b"]
     assert AgentConfig(provider="mock/x").interrupt_before == []
+
+
+def test_phase3_exports() -> None:
+    import lottie.mesh as m
+
+    for sym in ("MeshRunResult", "PendingApproval", "ApprovalDecision", "build_checkpointer"):
+        assert hasattr(m, sym), sym
