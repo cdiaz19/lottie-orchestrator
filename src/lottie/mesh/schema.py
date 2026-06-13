@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import operator
+from typing import Annotated
+
 from pydantic import BaseModel, Field
 
 FINISH = "FINISH"
@@ -13,6 +16,7 @@ class StepResult(BaseModel):
 
     worker: str
     result: str
+    step: int = 0
     metadata: dict[str, str] = {}
 
 
@@ -20,7 +24,7 @@ class MeshState(BaseModel):
     """Evolving, typed state threaded through every mesh node."""
 
     task: str
-    history: list[StepResult] = []
+    history: Annotated[list[StepResult], operator.add] = []
     final: str | None = None
 
     def with_step(self, step: StepResult) -> MeshState:

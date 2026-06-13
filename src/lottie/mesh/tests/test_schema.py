@@ -56,3 +56,17 @@ def test_package_exports() -> None:
 
     for sym in ("MeshAgent", "MeshInput", "MeshOutput", "MeshState", "LocalEngine"):
         assert hasattr(m, sym), sym
+
+
+def test_step_result_has_step_index_default_zero() -> None:
+    from lottie.mesh.schema import StepResult
+
+    assert StepResult(worker="w", result="r").step == 0
+    assert StepResult(worker="w", result="r", step=3).step == 3
+
+
+def test_mesh_state_history_still_appends_via_with_step() -> None:
+    from lottie.mesh.schema import MeshState, StepResult
+
+    s = MeshState(task="t").with_step(StepResult(worker="a", result="x"))
+    assert [h.worker for h in s.history] == ["a"]
