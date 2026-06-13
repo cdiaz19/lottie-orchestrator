@@ -40,3 +40,12 @@ def test_mesh_errors_hierarchy() -> None:
 
     assert issubclass(CapabilityViolation, MeshError)
     assert issubclass(MeshStepLimitExceeded, MeshError)
+
+
+def test_agent_config_has_workers_field() -> None:
+    from lottie.project.config import AgentConfig
+
+    cfg = AgentConfig(provider="mock/x", workers=["research", "critic"])
+    assert cfg.workers == ["research", "critic"]
+    # default empty for non-mesh agents
+    assert AgentConfig(provider="mock/x").workers == []

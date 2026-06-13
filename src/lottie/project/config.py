@@ -33,6 +33,7 @@ class AgentConfig(BaseModel):
     model_params: dict[str, object] = {}
     capabilities: list[str] = []
     policies: list[str] = []
+    workers: list[str] = []  # mesh routing allow-set (capability enforcement)
 
 
 def find_project_root(start: Path | None = None) -> Path:
