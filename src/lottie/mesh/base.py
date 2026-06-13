@@ -58,10 +58,16 @@ class MeshAgent(BaseAgent[MeshInput, MeshOutput]):
         def route(state: MeshState) -> RouteDecision:
             return self._router.route(state, self._descriptions)
 
-        final = self._engine.run(
+        result = self._engine.run(
             MeshState(task=data.task),
             nodes=self._nodes,
             route=route,
             max_steps=data.max_steps,
         )
-        return MeshOutput(final=final.final or "", history=final.history)
+        return MeshOutput(
+            final=result.state.final or "",
+            history=result.state.history,
+            status=result.status,
+            thread_id=result.thread_id,
+            pending=result.pending,
+        )

@@ -91,3 +91,26 @@ def test_mesh_rolls_up_worker_metrics() -> None:
     assert mesh.last_metrics.input_tokens == 7
     assert mesh.last_metrics.output_tokens == 11
     assert mesh.last_metrics.cost_usd == 0.5
+
+
+def test_mesh_output_status_complete_on_normal_run() -> None:
+    from lottie.llm import MockLLMProvider
+    from lottie.mesh.base import MeshAgent
+    from lottie.mesh.schema import (
+        MeshInput,
+        MeshState,  # noqa: F401  (used in `node` annotation under PEP 563)
+        StepResult,
+    )
+
+    def node(state: MeshState) -> MeshState:
+        return state.with_step(StepResult(worker="a", result="done"))
+
+    mesh = MeshAgent(
+        MockLLMProvider(["a", "FINISH"]),
+        nodes={"a": node},
+        descriptions={"a": "x"},
+        enable_benchmarks=False,
+    )
+    out = mesh.run(MeshInput(task="t"))
+    assert out.status == "complete" and out.thread_id is None and out.pending is None
+    assert out.final == "done"
