@@ -20,7 +20,8 @@ from lottie.project.discovery import (
     load_input_model,
     load_system_prompt,
 )
-from lottie.serve.service import AgentService, ServeError
+from lottie.serve.errors import ServeError
+from lottie.serve.service import AgentService
 
 logger = logging.getLogger(__name__)
 

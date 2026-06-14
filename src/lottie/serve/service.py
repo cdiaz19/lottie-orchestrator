@@ -17,12 +17,9 @@ from lottie.project.discovery import (
     load_agent_class,
     load_input_model,
 )
+from lottie.serve.errors import ServeError
 from lottie.serve.schema import AgentInfo, RunResult
 from lottie.serve.security import SecurityGate
-
-
-class ServeError(Exception):
-    """Base for serving-core errors. Transport-agnostic — no typer."""
 
 
 class AgentNotFoundError(ServeError):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from lottie.serve.errors import SecurityViolation, ServeError
 from lottie.serve.schema import AgentInfo, RunResult
 from lottie.serve.security import SecurityGate
 from lottie.serve.service import (
@@ -10,7 +11,6 @@ from lottie.serve.service import (
     AgentNotFoundError,
     AgentService,
     InvalidInputError,
-    ServeError,
 )
 
 __all__ = [
@@ -22,5 +22,6 @@ __all__ = [
     "InvalidInputError",
     "RunResult",
     "SecurityGate",
+    "SecurityViolation",
     "ServeError",
 ]
