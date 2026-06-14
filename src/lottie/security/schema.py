@@ -66,3 +66,17 @@ class InjectionScanOutput(BaseModel):
     flagged: bool
     findings: list[SecurityFinding] = []
     sanitized: str  # content with matched spans replaced by [REDACTED:INJECTION]
+
+
+class SanitizeInput(BaseModel):
+    """External input text to screen before it reaches an agent."""
+
+    content: str
+    max_len: int = 20_000
+
+
+class SanitizeOutput(BaseModel):
+    """Screen verdict. ok=False means the gate must reject (fail-closed)."""
+
+    ok: bool
+    reason: str = ""
