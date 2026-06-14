@@ -6,7 +6,7 @@ Provider-agnostic multi-agent AI orchestration framework with shared knowledge a
 
 > Works with Claude Code, Cursor, Codex, and any LLM. Swap Claude for GPT-4o with a single config change — no code changes, ever.
 
-**Status:** Phase 3 — Mesh Hardening shipped (`v0.4.0`): a `LangGraphEngine` (optional `[mesh]` extra) adds parallel fan-out, human-in-the-loop interrupt/resume, and checkpoint time-travel behind the engine ABC; the hand-rolled `LocalEngine` stays the zero-dep default. Phase 2 (Agent Mesh core, `v0.3.0`), Phases 0–1 (foundations, knowledge core), and the Phase-4 MCP stdio transport all shipped.
+**Status:** Phase 3 — Mesh Hardening shipped (`v0.4.0`): a `LangGraphEngine` (optional `[mesh]` extra) adds parallel fan-out, human-in-the-loop interrupt/resume, and checkpoint time-travel behind the engine ABC; the hand-rolled `LocalEngine` stays the zero-dep default. Phase 2 (Agent Mesh core, `v0.3.0`), Phases 0–1 (foundations, knowledge core), and the Phase-4 MCP stdio transport all shipped. Governance has begun landing on `main`: a fail-closed serve-path `SecurityGate`, an immutable per-run audit trail (`lottie audit`), and a declarative capability policy engine (allow/deny/escalate).
 
 ---
 
@@ -94,7 +94,7 @@ lottie serve                               # MCP stdio server (one tool per agen
 | `v0.2.0` | 1 — Knowledge Core | ChromaDB, RAG pipeline, knowledge graph | ✅ |
 | `v0.3.0` | 2 — Agent Mesh | Supervisor→worker mesh, conditional routing, typed state (parallel/HITL/time-travel → Phase 3) | ✅ |
 | `v0.4.0` | 3 — Mesh Hardening | LangGraph backend, parallel fork/join, human-in-the-loop, time-travel (opt-in `[mesh]` extra) | ✅ |
-| _later_ | Governance | immutable audit trail + capability policy engine (allow/deny/escalate) in review; cost budgets + OpenTelemetry next | 🚧 audit + policy |
+| _later_ | Governance | immutable audit trail (`lottie audit`) + capability policy engine (allow/deny/escalate); cost budgets + OpenTelemetry next | ✅ audit + policy |
 | `v0.5.0` | 4 — Integration | MCP server, OpenAI-compat API, REST | 🚧 MCP stdio |
 | `v1.0.0` | 5 — Public SDK | docs site, plugin system, demos | ◻ |
 
