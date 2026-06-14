@@ -34,7 +34,7 @@ src/lottie/
   governance/   audit logger, policy engine, cost tracker
 ```
 
-Key abstractions: `LLMProvider` (swap providers), `BaseAgent` / `BaseSkill` (typed, auto-benchmarked), `SecurityGate` (input/output chokepoint on every run), `MeshAgent` (supervisor→worker mesh; itself a `BaseAgent`), `AgentService` (transport-agnostic serving core), `KnowledgeManifest` (YAML + graph).
+Key abstractions: `LLMProvider` (swap providers), `BaseAgent` / `BaseSkill` (typed, auto-benchmarked), `SecurityGate` (fail-closed input/output chokepoint on the serve path), `MeshAgent` (supervisor→worker mesh; itself a `BaseAgent`), `AgentService` (transport-agnostic serving core), `KnowledgeManifest` (YAML + graph).
 
 ## Quickstart
 
