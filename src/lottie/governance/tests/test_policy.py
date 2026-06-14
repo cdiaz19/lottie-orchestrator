@@ -37,6 +37,14 @@ def test_load_policy_missing_raises(tmp_path: Path) -> None:
         load_policy(tmp_path, "nope")
 
 
+def test_load_policy_malformed_yaml_raises_config_error(tmp_path: Path) -> None:
+    # Fail closed AND typed: a YAML parse error must surface as PolicyConfigError,
+    # not a raw yaml.YAMLError (regression for Round-7 finding FG-1).
+    _write(tmp_path, "base", "allow: [unclosed\n")
+    with pytest.raises(PolicyConfigError):
+        load_policy(tmp_path, "base")
+
+
 def test_gate_clean_passes() -> None:
     PolicyGate(["http"], allow=set(), deny=set(), escalate=set()).check()  # no raise
 

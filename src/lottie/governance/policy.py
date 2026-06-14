@@ -43,7 +43,10 @@ def load_policy(root: Path, name: str) -> Policy:
     path = Path(root) / "policies" / f"{name}.yaml"
     if not path.is_file():
         raise PolicyConfigError(f"declared policy {name!r} not found at {path}")
-    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        raise PolicyConfigError(f"policy {name!r} at {path} is not valid YAML: {exc}") from exc
     if raw is None:
         return Policy(name=name)
     if not isinstance(raw, dict):
