@@ -8,7 +8,9 @@ code-write gate (CLAUDE.md rules 9, 10, 13).
 
 from __future__ import annotations
 
+import os
 import re
+import tempfile
 from pathlib import Path
 
 from detect_secrets.core.secrets_collection import SecretsCollection
@@ -65,6 +67,21 @@ class SecretDetectionSkill(BaseSkill[ScanInput, ScanOutput]):
                     message="potential secret",
                 )
             )
+
+    def scan_text(self, content: str, source: str = "output") -> list[SecurityFinding]:
+        """Secret-scan a string by reusing the file-based _execute on a private temp file.
+
+        Behavior-preserving: delegates to _execute; only the temp round-trip and the
+        `file` relabel are new, so a finding never leaks the temp path.
+        """
+        fd, tmp = tempfile.mkstemp(suffix=".txt")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(content)
+            findings = self._execute(ScanInput(paths=[tmp])).findings
+        finally:
+            os.unlink(tmp)
+        return [f.model_copy(update={"file": source}) for f in findings]
 
     def _scan_custom(
         self,
