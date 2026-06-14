@@ -80,3 +80,17 @@ class SanitizeOutput(BaseModel):
 
     ok: bool
     reason: str = ""
+
+
+class OutputCheckInput(BaseModel):
+    """LLM output text to screen before it leaves Lottie."""
+
+    content: str
+    max_len: int = 100_000
+
+
+class OutputCheckOutput(BaseModel):
+    """Screen verdict. ok=False means the gate must withhold the output."""
+
+    ok: bool
+    reason: str = ""
