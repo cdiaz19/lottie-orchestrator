@@ -96,7 +96,8 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
                     agent=self.name,
                     provider=self.provider,
                     status=status,
-                    root=True,
+                    # pre-check runs before the depth increment, so depth 0 == top-level here
+                    root=_depth() == 0,
                     input_sha256=hash_model(data),
                     output_sha256=None,
                     input_tokens=0,
