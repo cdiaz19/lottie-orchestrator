@@ -33,8 +33,9 @@ from rich.panel import Panel
 from lottie.mesh.errors import MeshError
 from lottie.mesh.schema import ApprovalDecision
 from lottie.project.config import find_project_root
+from lottie.serve.errors import ServeError
 from lottie.serve.schema import RunResult
-from lottie.serve.service import AgentService, ServeError
+from lottie.serve.service import AgentService
 
 mesh_app = typer.Typer(
     help=(
