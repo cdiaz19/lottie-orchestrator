@@ -11,6 +11,7 @@ import threading
 import warnings
 from abc import abstractmethod
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import ClassVar
 
@@ -19,6 +20,7 @@ from pydantic import BaseModel
 from lottie.core.metrics import Kind
 from lottie.core.runnable import InstrumentedRunnable
 from lottie.governance.audit import AuditLogger, build_audit_logger, hash_model
+from lottie.governance.policy import NullPolicyGate, PolicyEscalation, PolicyGate, PolicyViolation
 from lottie.governance.schema import AuditRecord
 from lottie.llm import LLMProvider, LLMResponse, Message
 from lottie.memory.base import MemoryClient, NullMemoryClient
@@ -56,13 +58,23 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         self.llm = llm
         self.memory: MemoryClient = memory or NullMemoryClient()
         self._audit = audit if audit is not None else build_audit_logger(self._benchmarks_root)
+        self._policy: PolicyGate = NullPolicyGate()
+
+    def set_policy(self, gate: PolicyGate) -> None:
+        """Attach a policy gate (called by instantiate_agent for CLI/serve runs)."""
+        self._policy = gate
 
     @property
     def provider(self) -> str | None:
         return self.llm.model
 
     def run(self, data: InputT) -> OutputT:
-        """Instrumented run (super) plus one immutable audit record (best-effort)."""
+        """Policy pre-check, then instrumented run + audit (best-effort)."""
+        try:
+            self._policy.check()
+        except PolicyViolation as exc:
+            self._write_policy_block(data, exc)
+            raise
         _audit_depth.value = _depth() + 1
         is_root = _depth() == 1
         output: OutputT | None = None
@@ -74,6 +86,29 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
                 self._write_audit(data, output, is_root)
             finally:
                 _audit_depth.value = _depth() - 1
+
+    def _write_policy_block(self, data: InputT, exc: PolicyViolation) -> None:
+        status = "escalated" if isinstance(exc, PolicyEscalation) else "denied"
+        try:
+            self._audit.log(
+                AuditRecord(
+                    ts=datetime.now(UTC).isoformat(),
+                    agent=self.name,
+                    provider=self.provider,
+                    status=status,
+                    # pre-check runs before the depth increment, so depth 0 == top-level here
+                    root=_depth() == 0,
+                    input_sha256=hash_model(data),
+                    output_sha256=None,
+                    input_tokens=0,
+                    output_tokens=0,
+                    cost_usd=0.0,
+                    latency_ms=0.0,
+                    error=str(exc),
+                )
+            )
+        except Exception as e:  # never let auditing convert/suppress the policy block
+            warnings.warn(f"policy-block audit failed: {e}", stacklevel=2)
 
     def _write_audit(self, data: InputT, output: OutputT | None, is_root: bool) -> None:
         m = self.last_metrics
