@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import typer
 
+from lottie.cli.audit import audit
 from lottie.cli.benchmark import benchmark_app
 from lottie.cli.create import create_app
 from lottie.cli.doctor import doctor
@@ -45,4 +46,5 @@ app.add_typer(inspect_app, name="inspect")
 app.command("run")(run)
 app.command("serve")(serve)
 app.command("status")(status)
+app.command("audit")(audit)
 app.command("doctor")(doctor)

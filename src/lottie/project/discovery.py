@@ -17,6 +17,7 @@ import typer
 from pydantic import BaseModel
 
 from lottie.core import BaseAgent
+from lottie.governance.policy import build_policy_gate
 from lottie.llm import LLMProvider
 from lottie.project.config import AgentConfig, load_agent_config
 
@@ -202,10 +203,15 @@ def instantiate_agent(
         which is the correct behaviour for the ``serve`` and ``run`` paths.
     """
     if hasattr(agent_cls, "from_project"):
-        return agent_cls.from_project(  # type: ignore[no-any-return]
+        agent: BaseAgent[BaseModel, BaseModel] = agent_cls.from_project(
             llm=llm, root=root, config=config, enable_benchmarks=enable_benchmarks
         )
-    return agent_cls(llm=llm, enable_benchmarks=enable_benchmarks)
+    else:
+        agent = agent_cls(llm=llm, enable_benchmarks=enable_benchmarks)
+    agent.set_policy(
+        build_policy_gate(root, policies=config.policies, capabilities=config.capabilities)
+    )
+    return agent
 
 
 def required_fields(model: type[BaseModel]) -> list[str]:
