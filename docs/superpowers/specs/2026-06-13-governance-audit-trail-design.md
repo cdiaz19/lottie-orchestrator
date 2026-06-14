@@ -118,9 +118,12 @@ cost/latency/error all from `last_metrics`, which the super-`finally` set on bot
 `self._audit.log(record)`. On failure `output is None` → `output_sha256 = None`, `status = "error"`,
 `error = last_metrics.error`.
 
-- **Root flag:** the thread-local depth makes the outermost agent run `root=True`; a mesh worker
-  (a `BaseAgent` run inside `MeshAgent._execute`) is `root=False`. Workers are still recorded — the
-  flag lets `lottie audit` filter to top-level runs.
+- **Root flag:** a `contextvars.ContextVar` depth makes the outermost agent run `root=True`; a mesh
+  worker (a `BaseAgent` run inside `MeshAgent._execute`) is `root=False`. Workers are still recorded —
+  the flag lets `lottie audit` filter to top-level runs. The ContextVar (not a `threading.local`)
+  propagates into LangGraph parallel branches — langgraph copies the context when it forks worker
+  threads — so a **parallel** worker is correctly `root=False` too (regression-tested in
+  `mesh/tests/test_audit_root_parallel.py`).
 - **Injectability:** `audit` is constructor-injectable (tests pass a `SqliteAuditLogger(tmp)` or a
   spy); default is resolved via `build_audit_logger`.
 - **Skills untouched:** the hook is on `BaseAgent`, not `InstrumentedRunnable`, so skills are not

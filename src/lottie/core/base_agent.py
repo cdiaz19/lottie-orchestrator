@@ -7,7 +7,7 @@ long as LLM calls go through `self.complete`.
 
 from __future__ import annotations
 
-import threading
+import contextvars
 import warnings
 from abc import abstractmethod
 from collections.abc import Mapping
@@ -25,14 +25,14 @@ from lottie.governance.schema import AuditRecord
 from lottie.llm import LLMProvider, LLMResponse, Message
 from lottie.memory.base import MemoryClient, NullMemoryClient
 
-# Per-thread run depth → the `root` flag (depth 1 = top-level). NOTE: this assumes a
-# nested run shares the orchestrator's thread (LocalEngine / sequential mesh). A
-# LangGraph parallel worker runs on its own thread and will be flagged root=True.
-_audit_depth = threading.local()
+# Run depth → the `root` flag (depth 1 = top-level). A ContextVar (not threading.local)
+# so the depth propagates into LangGraph parallel worker threads (langgraph copies the
+# context when it forks branches), keeping nested workers root=False on any thread.
+_audit_depth: contextvars.ContextVar[int] = contextvars.ContextVar("lottie_audit_depth", default=0)
 
 
 def _depth() -> int:
-    return getattr(_audit_depth, "value", 0)
+    return _audit_depth.get()
 
 
 class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[InputT, OutputT]):
@@ -75,7 +75,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         except PolicyViolation as exc:
             self._write_policy_block(data, exc)
             raise
-        _audit_depth.value = _depth() + 1
+        token = _audit_depth.set(_depth() + 1)
         is_root = _depth() == 1
         output: OutputT | None = None
         try:
@@ -85,7 +85,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
             try:
                 self._write_audit(data, output, is_root)
             finally:
-                _audit_depth.value = _depth() - 1
+                _audit_depth.reset(token)
 
     def _write_policy_block(self, data: InputT, exc: PolicyViolation) -> None:
         status = "escalated" if isinstance(exc, PolicyEscalation) else "denied"
