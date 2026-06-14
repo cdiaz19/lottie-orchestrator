@@ -19,6 +19,12 @@ def _wide_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _disable_audit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default-off audit in tests; audit tests opt in by injecting a SqliteAuditLogger."""
+    monkeypatch.setenv("LOTTIE_DISABLE_AUDIT", "1")
+
+
+@pytest.fixture(autouse=True)
 def _isolate_unit_import_state() -> object:
     """Undo the global import-state mutation that ``lottie run``/``init`` perform.
 
