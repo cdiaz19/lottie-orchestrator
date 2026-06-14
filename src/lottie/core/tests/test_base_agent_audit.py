@@ -75,3 +75,33 @@ def test_nested_run_flags_inner_non_root(tmp_path: Path) -> None:
     statuses = {(r.agent, r.root) for r in rows}
     assert ("_Echo", False) in statuses   # inner ran nested
     assert ("_Outer", True) in statuses   # outer is top-level
+
+
+def test_audit_failure_never_breaks_a_successful_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _boom(_model: object) -> str:
+        raise ValueError("hash exploded")
+
+    monkeypatch.setattr("lottie.core.base_agent.hash_model", _boom)
+    agent = _Echo(_llm(), audit=SqliteAuditLogger(tmp_path))
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        out = agent.run(_In(q="hi"))  # must NOT raise
+    assert out.a == "echo:hi"
+
+
+def test_audit_failure_does_not_mask_original_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _boom(_model: object) -> str:
+        raise ValueError("hash exploded")
+
+    monkeypatch.setattr("lottie.core.base_agent.hash_model", _boom)
+    agent = _Boom(_llm(), audit=SqliteAuditLogger(tmp_path))
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with pytest.raises(RuntimeError, match="boom"):  # original error, not "hash exploded"
+            agent.run(_In(q="hi"))

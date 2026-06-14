@@ -8,6 +8,7 @@ long as LLM calls go through `self.complete`.
 from __future__ import annotations
 
 import threading
+import warnings
 from abc import abstractmethod
 from collections.abc import Mapping
 from pathlib import Path
@@ -22,6 +23,9 @@ from lottie.governance.schema import AuditRecord
 from lottie.llm import LLMProvider, LLMResponse, Message
 from lottie.memory.base import MemoryClient, NullMemoryClient
 
+# Per-thread run depth → the `root` flag (depth 1 = top-level). NOTE: this assumes a
+# nested run shares the orchestrator's thread (LocalEngine / sequential mesh). A
+# LangGraph parallel worker runs on its own thread and will be flagged root=True.
 _audit_depth = threading.local()
 
 
@@ -75,21 +79,24 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         m = self.last_metrics
         if m is None:  # super().run always sets it, but stay defensive
             return
-        record = AuditRecord(
-            ts=m.timestamp.isoformat(),
-            agent=m.name,
-            provider=m.provider,
-            status="ok" if m.success else "error",
-            root=is_root,
-            input_sha256=hash_model(data),
-            output_sha256=hash_model(output) if output is not None else None,
-            input_tokens=m.input_tokens,
-            output_tokens=m.output_tokens,
-            cost_usd=m.cost_usd,
-            latency_ms=m.latency_ms,
-            error=m.error,
-        )
-        self._audit.log(record)
+        try:
+            record = AuditRecord(
+                ts=m.timestamp.isoformat(),
+                agent=m.name,
+                provider=m.provider,
+                status="ok" if m.success else "error",
+                root=is_root,
+                input_sha256=hash_model(data),
+                output_sha256=hash_model(output) if output is not None else None,
+                input_tokens=m.input_tokens,
+                output_tokens=m.output_tokens,
+                cost_usd=m.cost_usd,
+                latency_ms=m.latency_ms,
+                error=m.error,
+            )
+            self._audit.log(record)
+        except Exception as exc:  # never let auditing break a run
+            warnings.warn(f"audit record failed: {exc}", stacklevel=2)
 
     def complete(
         self,
