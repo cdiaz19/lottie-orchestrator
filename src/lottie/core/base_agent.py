@@ -13,7 +13,7 @@ from abc import abstractmethod
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel
 
@@ -98,7 +98,9 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
             finally:
                 _audit_depth.reset(token)
 
-    def _write_block(self, data: InputT, exc: Exception, status: str) -> None:
+    def _write_block(
+        self, data: InputT, exc: Exception, status: Literal["denied", "escalated", "budget_exceeded"]
+    ) -> None:
         try:
             self._audit.log(
                 AuditRecord(
