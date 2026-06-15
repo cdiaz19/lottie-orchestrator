@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from lottie.core.metrics import Kind
 from lottie.core.runnable import InstrumentedRunnable
 from lottie.governance.audit import AuditLogger, build_audit_logger, hash_model
+from lottie.governance.cost import BudgetExceeded, CostGate, NullCostGate
 from lottie.governance.policy import NullPolicyGate, PolicyEscalation, PolicyGate, PolicyViolation
 from lottie.governance.schema import AuditRecord
 from lottie.llm import LLMProvider, LLMResponse, Message
@@ -59,21 +60,31 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         self.memory: MemoryClient = memory or NullMemoryClient()
         self._audit = audit if audit is not None else build_audit_logger(self._benchmarks_root)
         self._policy: PolicyGate = NullPolicyGate()
+        self._cost: CostGate = NullCostGate()
 
     def set_policy(self, gate: PolicyGate) -> None:
         """Attach a policy gate (called by instantiate_agent for CLI/serve runs)."""
         self._policy = gate
+
+    def set_cost_gate(self, gate: CostGate) -> None:
+        """Attach a cost-budget gate (called by instantiate_agent for CLI/serve runs)."""
+        self._cost = gate
 
     @property
     def provider(self) -> str | None:
         return self.llm.model
 
     def run(self, data: InputT) -> OutputT:
-        """Policy pre-check, then instrumented run + audit (best-effort)."""
+        """Policy + budget pre-checks, then instrumented run + audit (best-effort)."""
         try:
-            self._policy.check()
+            self._policy.check()   # capability policy — checked FIRST (no I/O)
+            self._cost.check()     # cumulative budget — checked SECOND (reads the ledger)
         except PolicyViolation as exc:
-            self._write_policy_block(data, exc)
+            status = "escalated" if isinstance(exc, PolicyEscalation) else "denied"
+            self._write_block(data, exc, status)
+            raise
+        except BudgetExceeded as exc:
+            self._write_block(data, exc, "budget_exceeded")
             raise
         token = _audit_depth.set(_depth() + 1)
         is_root = _depth() == 1
@@ -87,8 +98,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
             finally:
                 _audit_depth.reset(token)
 
-    def _write_policy_block(self, data: InputT, exc: PolicyViolation) -> None:
-        status = "escalated" if isinstance(exc, PolicyEscalation) else "denied"
+    def _write_block(self, data: InputT, exc: Exception, status: str) -> None:
         try:
             self._audit.log(
                 AuditRecord(
@@ -107,8 +117,8 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
                     error=str(exc),
                 )
             )
-        except Exception as e:  # never let auditing convert/suppress the policy block
-            warnings.warn(f"policy-block audit failed: {e}", stacklevel=2)
+        except Exception as e:  # never let auditing convert/suppress the block
+            warnings.warn(f"block audit failed: {e}", stacklevel=2)
 
     def _write_audit(self, data: InputT, output: OutputT | None, is_root: bool) -> None:
         m = self.last_metrics
