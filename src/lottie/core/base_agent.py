@@ -80,8 +80,9 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
             self._policy.check()   # capability policy — checked FIRST (no I/O)
             self._cost.check()     # cumulative budget — checked SECOND (reads the ledger)
         except PolicyViolation as exc:
-            status = "escalated" if isinstance(exc, PolicyEscalation) else "denied"
-            self._write_block(data, exc, status)
+            self._write_block(
+                data, exc, "escalated" if isinstance(exc, PolicyEscalation) else "denied"
+            )
             raise
         except BudgetExceeded as exc:
             self._write_block(data, exc, "budget_exceeded")
@@ -99,7 +100,10 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
                 _audit_depth.reset(token)
 
     def _write_block(
-        self, data: InputT, exc: Exception, status: Literal["denied", "escalated", "budget_exceeded"]
+        self,
+        data: InputT,
+        exc: Exception,
+        status: Literal["denied", "escalated", "budget_exceeded"],
     ) -> None:
         try:
             self._audit.log(
