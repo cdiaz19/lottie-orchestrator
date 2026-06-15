@@ -11,7 +11,7 @@ class AuditRecord(BaseModel):
     ts: str  # ISO-8601 UTC
     agent: str
     provider: str | None
-    status: str  # "ok" | "error" | "denied" | "escalated"
+    status: str  # "ok" | "error" | "denied" | "escalated" | "budget_exceeded"
     root: bool  # True = top-level run; False = nested (e.g. a mesh worker)
     input_sha256: str
     output_sha256: str | None
