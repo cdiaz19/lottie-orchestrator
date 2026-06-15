@@ -41,10 +41,21 @@ The locked rule is therefore **block purely on prior cumulative spend**:
 > `prior >= budget_usd` → block (`BudgetExceeded`). Otherwise allow the run; its cost is recorded
 > post-hoc by the audit hook and counts toward the *next* check.
 
-Consequence — **one-run overshoot is allowed by design.** The run that *crosses* `budget_usd` completes
-(it was under budget when it started); the *next* run is blocked. This is a post-hoc accrual circuit
-breaker, not a pre-flight cost estimator. Documented, intentional, and YAGNI-correct for a first slice
-(pre-flight estimation would need per-model token pricing + an input-token estimate — out of scope).
+**Overshoot is bounded, NOT capped at one run.** The check is read-then-write (read `total_cost`, run,
+write the cost post-hoc), so there is a TOCTOU window:
+- **Sequential execution:** overshoot is one run — the run that *crosses* `budget_usd` completes (it was
+  under budget when it started); the *next* run is blocked.
+- **Concurrent same-agent runs** (now possible since parallel mesh is on `main`: several workers sharing
+  one agent *name* run on different threads): each can read `prior < budget_usd` before *any* of them
+  writes its cost, so all proceed. Overshoot is therefore bounded by the **number of in-flight
+  same-agent runs**, not by one.
+
+This is a post-hoc accrual circuit breaker, not a pre-flight estimator and not an atomic reservation.
+Tightening the bound (atomic check-and-reserve / per-agent locking, or a reserved-spend ledger) is
+**deferred (§8)** — it's heavy and a first slice doesn't need it. The spec deliberately does **not**
+claim a one-run cap it cannot honor under concurrency, mirroring the honesty of the fail-closed framing.
+(Pre-flight estimation would additionally need per-model token pricing + an input-token estimate — also
+out of scope.)
 
 ## 3. Spend source — `SqliteAuditLogger.total_cost`
 
@@ -142,6 +153,10 @@ for the same layering reason the policy factory does.
 | set | **disabled** (`LOTTIE_DISABLE_AUDIT` / `NullAuditLogger`) | unverifiable | **block** `BudgetExceeded` (fail-closed) |
 | set | enabled but query raises | unverifiable | **block** `BudgetExceeded` (fail-closed) |
 
+Fail-closed scopes to a **configured** budget. Row 1 is the load-bearing one: `budget_usd = None` +
+audit disabled → **allow** (unlimited), *not* block — a budget-free agent is never affected by audit
+state. Only a *configured* budget that cannot be verified fails closed.
+
 The security property: a configured budget that cannot be verified **blocks**, exactly as the policy
 engine fails closed on a malformed/unreadable policy. Spend is never silently assumed 0.
 
@@ -204,13 +219,23 @@ a different ledger. Note it; don't over-engineer a fix this slice.
 
 - **Per-run token/cost caps** (`max_tokens_per_run`, DoS clamp on `model_params`) — a separate later
   slice; different mechanism (pre-call clamp vs cumulative ledger).
+- **Bounded-overshoot tightening (TOCTOU)** — DEFERRED. The read-then-write gap (§2) lets concurrent
+  same-agent runs overshoot by the number in flight. An atomic check-and-reserve (per-agent lock, or a
+  reserved-spend ledger that records an estimate before the run and reconciles after) would cap the
+  overshoot, but it's heavy and not needed for a first slice. The spec claims only the honest bound.
 - **Per-project budget** — DEFERRED. `MeshAgent` rolls worker cost into its own `RunMetrics` (via
   `_accumulate`) **and** each worker writes its own audit row, so `SUM(cost_usd)` over *all* rows
   double-counts mesh-worker spend. A correct project budget must first resolve that double-count
   (e.g. budget only `root=True` rows, or exclude worker rollups) — non-trivial, its own slice. Per-agent
   budgeting avoids this: each agent's rows are summed independently, no cross-agent rollup.
+- **Mesh-vs-worker accounting (in scope, stated to avoid a misread):** because `MeshAgent._accumulate`
+  folds worker token/cost into the mesh's own `RunMetrics`, a mesh agent's audit row already includes
+  its workers' spend. So a worker's cost counts toward **both** the worker agent's `budget_usd` *and*
+  the mesh agent's `budget_usd` (each is summed by its own name). This is intentional and defensible —
+  the mesh "spent" that money orchestrating, the worker "spent" it executing — it is **not**
+  double-charging within a single budget, and per-agent sums never cross agent names.
 - **Daily / windowed budgets, reset, soft-warn thresholds** — all-time cumulative only this slice.
-- **Pre-flight cost estimation** — the one-run overshoot (§2) is accepted instead of estimating this
+- **Pre-flight cost estimation** — the bounded post-hoc overshoot (§2) is accepted instead of estimating this
   run's cost from input tokens × per-model pricing.
 - **Forwarding `audit`/`cost` through `MeshAgent.__init__`** — `MeshAgent` still doesn't forward an
   injected logger/gate (noted in the audit slice); unchanged here.
