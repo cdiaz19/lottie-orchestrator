@@ -35,6 +35,7 @@ class AgentConfig(BaseModel):
     policies: list[str] = []
     workers: list[str] = []  # mesh routing allow-set (capability enforcement)
     interrupt_before: list[str] = []  # mesh workers that pause for human approval (HITL)
+    budget_usd: float | None = None  # per-agent cumulative spend cap; None = unlimited
 
 
 def find_project_root(start: Path | None = None) -> Path:

@@ -17,6 +17,7 @@ import typer
 from pydantic import BaseModel
 
 from lottie.core import BaseAgent
+from lottie.governance.cost import build_cost_gate
 from lottie.governance.policy import build_policy_gate
 from lottie.llm import LLMProvider
 from lottie.project.config import AgentConfig, load_agent_config
@@ -210,6 +211,9 @@ def instantiate_agent(
         agent = agent_cls(llm=llm, enable_benchmarks=enable_benchmarks)
     agent.set_policy(
         build_policy_gate(root, policies=config.policies, capabilities=config.capabilities)
+    )
+    agent.set_cost_gate(
+        build_cost_gate(root, agent=agent.name, budget_usd=config.budget_usd)
     )
     return agent
 
