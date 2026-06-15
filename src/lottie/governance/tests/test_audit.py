@@ -83,3 +83,32 @@ def test_build_audit_logger_respects_disable_env(
     assert isinstance(build_audit_logger(tmp_path), NullAuditLogger)
     monkeypatch.delenv("LOTTIE_DISABLE_AUDIT", raising=False)
     assert isinstance(build_audit_logger(tmp_path), SqliteAuditLogger)
+
+
+def test_total_cost_sums_one_agent(tmp_path: Path) -> None:
+    logger = SqliteAuditLogger(tmp_path)
+    for cost in (0.01, 0.02, 0.03):
+        logger.log(
+            AuditRecord(
+                ts="2026-06-14T10:00:00+00:00", agent="digest", provider="mock/x",
+                status="ok", root=True, input_sha256="a" * 64, output_sha256="b" * 64,
+                input_tokens=1, output_tokens=2, cost_usd=cost, latency_ms=1.0, error=None,
+            )
+        )
+    assert abs(logger.total_cost("digest") - 0.06) < 1e-9
+
+
+def test_total_cost_unknown_agent_is_zero(tmp_path: Path) -> None:
+    assert SqliteAuditLogger(tmp_path).total_cost("nope") == 0.0
+
+
+def test_total_cost_ignores_other_agents(tmp_path: Path) -> None:
+    logger = SqliteAuditLogger(tmp_path)
+    logger.log(
+        AuditRecord(
+            ts="2026-06-14T10:00:00+00:00", agent="a", provider=None, status="ok",
+            root=True, input_sha256="a" * 64, output_sha256=None, input_tokens=0,
+            output_tokens=0, cost_usd=0.05, latency_ms=1.0, error=None,
+        )
+    )
+    assert SqliteAuditLogger(tmp_path).total_cost("b") == 0.0

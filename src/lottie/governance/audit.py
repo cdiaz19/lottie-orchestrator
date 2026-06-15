@@ -125,6 +125,15 @@ class SqliteAuditLogger(AuditLogger):
         ]
 
 
+    def total_cost(self, agent: str) -> float:
+        """Sum of cost_usd across all recorded runs for `agent` (0.0 if none)."""
+        conn = self._connect()
+        row = conn.execute(
+            "SELECT COALESCE(SUM(cost_usd), 0.0) FROM audit WHERE agent = ?", (agent,)
+        ).fetchone()
+        return float(row[0])
+
+
 def build_audit_logger(root: Path) -> AuditLogger:
     """NullAuditLogger when LOTTIE_DISABLE_AUDIT is set, else SqliteAuditLogger(root)."""
     if os.getenv("LOTTIE_DISABLE_AUDIT", "").lower() in _DISABLE_VALUES:
