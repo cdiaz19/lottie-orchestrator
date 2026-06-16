@@ -23,9 +23,9 @@ agent→skill and mesh→worker tree, exported via OTLP when configured.
   `RunContext`/`last_metrics`, emits — does not duplicate.
 - **Nesting:** via OTel's own context propagation (contextvars-backed — the same mechanism class as the
   audit root-flag fix `e99d42e`). Same-thread nesting (agent→skill, sequential mesh) is guaranteed and
-  tested. **Cross-thread parallel-mesh nesting is *expected but unverified*** (relies on langgraph
-  copying the OTel context into its worker threads, as it does for the audit ContextVar) — validated in
-  lab Round 9; if it doesn't hold it moves to §7 deferred.
+  tested. **Cross-thread parallel-mesh nesting is VERIFIED (lab Round 9):** parallel LangGraph worker
+  spans parent to the mesh span — langgraph copies the OTel context into its worker threads, exactly as
+  it does for the audit ContextVar (the `e99d42e` property).
 - **Opt-in `[otel]` extra** (like `[mesh]`/`[serve]`): base install OTel-free, all OTel tests
   skip-guarded; OTLP exporter, env-driven endpoint, **no-op when the extra is absent or no endpoint is
   set**.
@@ -102,12 +102,11 @@ tokens/cost/latency are populated); set error status on exception. The existing
 
 - The span wraps `_execute`, so a nested run (a skill called inside an agent's `_execute`, or a mesh
   worker inside the engine) opens its span while the parent span is the current OTel context → it nests
-  automatically. Mesh **parallel** workers are *expected* to nest via the same context copy langgraph
-  performs into its worker threads (the property the audit root-flag fix `e99d42e` relied on) — OTel's
-  context is contextvars-backed, like the audit depth. **Unverified in this slice** (only same-thread
-  agent→skill nesting is tested); OTel context does not auto-propagate into arbitrary threads without
-  `copy_context`, so whether langgraph's copy carries the active span is an open question — **validated
-  in lab Round 9**, with cross-thread parent-link propagation listed under §7 deferred if it doesn't hold.
+  automatically. Mesh **parallel** workers nest too — **VERIFIED in lab Round 9**: parallel worker spans
+  parent to the mesh span because langgraph copies the OTel context (contextvars-backed, like the audit
+  depth) into its worker threads, the same property the audit root-flag fix `e99d42e` relied on. (Only
+  same-thread agent→skill nesting is unit-tested in this repo; the cross-thread case is covered by the
+  Round-9 driver.)
 - `span_set_metrics` reads `last_metrics` (set by `_record` in the same `finally`): sets
   `lottie.agent`/`lottie.kind`/`lottie.status`/`lottie.latency_ms`/`lottie.input_tokens`/
   `lottie.output_tokens`/`lottie.cost_usd`/`lottie.provider`. `span_set_error` sets the OTel error
@@ -131,8 +130,9 @@ All OTel tests skip-guarded (`pytest.importorskip("opentelemetry")` / the `[mesh
   named after the runnable with the expected attributes; `LOTTIE_DISABLE_OTEL` → no span; extra absent
   → `run_span` yields `None` and the run still returns.
 - **Nesting** (integration): an agent whose `_execute` runs a second agent (same thread) → the inner
-  span's parent is the outer span (assert `parent.span_id`). Parallel LangGraph mesh nesting is NOT
-  unit-tested here (its own thread + the `[mesh]` extra) — checked in lab Round 9.
+  span's parent is the outer span (assert `parent.span_id`). Parallel LangGraph mesh nesting is not
+  unit-tested in this repo (own thread + the `[mesh]` extra) — covered by the lab Round-9 driver, which
+  confirmed worker spans parent to the mesh span.
 - **Fail-open** (unit): a tracer/exporter that raises on span start or on attribute-set must NOT break
   the run — monkeypatch the tracer to raise, assert the run still returns its output and no exception
   leaks; a run that itself raises still propagates its OWN exception (not a tracing error), with the
@@ -158,8 +158,8 @@ All OTel tests skip-guarded (`pytest.importorskip("opentelemetry")` / the `[mesh
 ## 8. Definition of done
 
 Every run (agent + skill) emits one OTel span wrapping `_execute`, with the scalar attributes (no raw
-payloads), nested into the agent→skill / sequential mesh tree (parallel-worker nesting expected but
-validated in Round 9); opt-in `[otel]`
+payloads), nested into the agent→skill / mesh tree incl. parallel workers (cross-thread nesting verified
+in Round 9); opt-in `[otel]`
 extra with a no-op default (absent / no endpoint / `LOTTIE_DISABLE_OTEL`); **fail-open** — no tracer or
 collector failure can break or block a run; OTLP export when `OTEL_EXPORTER_OTLP_ENDPOINT` is set;
 `governance.otel` acyclic; base install OTel-free with all OTel tests skip-guarded. `uv run pytest -q` /
