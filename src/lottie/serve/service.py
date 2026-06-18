@@ -17,7 +17,7 @@ from lottie.project.discovery import (
     load_agent_class,
     load_input_model,
 )
-from lottie.serve.errors import ServeError
+from lottie.serve.errors import OutputSecurityViolation, ServeError
 from lottie.serve.schema import AgentInfo, RunResult
 from lottie.serve.security import SecurityGate
 
@@ -87,7 +87,15 @@ class AgentService:
         except Exception as exc:  # noqa: BLE001 — any agent failure → one typed error
             raise AgentExecutionError(f"agent '{name}' failed: {exc}") from exc
 
-        self._gate.check_output(output.model_dump_json())
+        try:
+            self._gate.check_output(output.model_dump_json())
+        except OutputSecurityViolation as exc:
+            m = agent.last_metrics
+            raise OutputSecurityViolation(
+                str(exc),
+                input_tokens=getattr(m, "input_tokens", 0),
+                output_tokens=getattr(m, "output_tokens", 0),
+            ) from exc
         return self._result(name, output, agent.last_metrics)
 
     def resume_agent(
