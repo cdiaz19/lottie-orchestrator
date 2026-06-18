@@ -17,6 +17,7 @@ from typing import ClassVar
 from pydantic import BaseModel
 
 from lottie.core.metrics import Kind, RunContext, RunMetrics, append_metrics, git_version
+from lottie.governance.otel import run_span, span_set_error, span_set_metrics
 
 _DISABLE_VALUES = {"1", "true", "yes", "on"}
 
@@ -56,15 +57,18 @@ class InstrumentedRunnable[InputT: BaseModel, OutputT: BaseModel](ABC):
         start = perf_counter()
         success = True
         error: str | None = None
-        try:
-            return self._execute(data)
-        except Exception as exc:
-            success = False
-            error = repr(exc)
-            raise
-        finally:
-            self._record(ctx, start, success, error)
-            self._active_ctx = None
+        with run_span(self.name, self.kind) as span:
+            try:
+                return self._execute(data)
+            except Exception as exc:
+                success = False
+                error = repr(exc)
+                span_set_error(span, exc)
+                raise
+            finally:
+                self._record(ctx, start, success, error)
+                span_set_metrics(span, self.last_metrics)
+                self._active_ctx = None
 
     def _record(
         self,
