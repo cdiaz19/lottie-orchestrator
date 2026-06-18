@@ -11,12 +11,18 @@ import logging
 import time
 from pathlib import Path
 
+import anyio
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from lottie.project.config import ChatConfig, load_agent_config
+from lottie.serve.openai_schema import (
+    ChatCompletionRequest,
+    chat_completion_dict,
+    last_user_message,
+)
 from lottie.serve.service import AgentService
 
 logger = logging.getLogger(__name__)
@@ -48,6 +54,40 @@ def build_openai_app(root: Path, *, service: AgentService | None = None) -> Star
         ]
         return JSONResponse({"object": "list", "data": data})
 
-    app = Starlette(routes=[Route("/v1/models", list_models, methods=["GET"])])
-    app.state.svc = svc  # POST route (next task) picks this up from request.app.state.svc
+    async def chat_completions(request: Request) -> JSONResponse:
+        svc_: AgentService = request.app.state.svc
+        body = await request.json()
+        req = ChatCompletionRequest.model_validate(body)
+
+        chat = _chat_config(root, req.model)
+        # (error paths arrive next task; happy path assumes a valid chat-capable model)
+        assert chat is not None
+
+        content = last_user_message(req)
+        assert content is not None
+        payload = {chat.input_field: content}
+
+        result = await anyio.to_thread.run_sync(
+            lambda: svc_.run_agent(req.model, payload)
+        )
+        answer = str(result.output.get(chat.output_field, ""))
+        return JSONResponse(
+            chat_completion_dict(
+                agent=req.model,
+                content=answer,
+                input_tokens=result.input_tokens,
+                output_tokens=result.output_tokens,
+                latency_ms=result.latency_ms,
+                cost_usd=result.cost_usd,
+                status=result.status,
+            )
+        )
+
+    app = Starlette(
+        routes=[
+            Route("/v1/models", list_models, methods=["GET"]),
+            Route("/v1/chat/completions", chat_completions, methods=["POST"]),
+        ]
+    )
+    app.state.svc = svc
     return app
