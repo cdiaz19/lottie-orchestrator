@@ -20,6 +20,7 @@ from starlette.routing import Route
 
 from lottie.project.config import ChatConfig, load_agent_config
 from lottie.serve.error_map import json_error
+from lottie.serve.errors import InputSecurityViolation, OutputSecurityViolation
 from lottie.serve.openai_schema import (
     ChatCompletionRequest,
     chat_completion_dict,
@@ -51,6 +52,12 @@ def build_openai_app(root: Path, *, service: AgentService | None = None) -> Star
     """Build a Starlette app exposing chat-capable agents over the OpenAI API."""
     svc = service or AgentService(root)
 
+    def _model_not_found(model: str) -> JSONResponse:
+        return json_error(
+            404, f"model '{model}' not found",
+            type_="invalid_request_error", code="model_not_found",
+        )
+
     async def list_models(request: Request) -> JSONResponse:
         from lottie.project.discovery import discover_agents
 
@@ -79,12 +86,7 @@ def build_openai_app(root: Path, *, service: AgentService | None = None) -> Star
         # 3. resolve a chat-capable model
         chat = _chat_config(root, req.model)
         if chat is None:
-            return json_error(
-                404,
-                f"model '{req.model}' not found",
-                type_="invalid_request_error",
-                code="model_not_found",
-            )
+            return _model_not_found(req.model)
 
         # 4. last user message -> typed payload
         content = last_user_message(req)
@@ -99,15 +101,30 @@ def build_openai_app(root: Path, *, service: AgentService | None = None) -> Star
             result = await anyio.to_thread.run_sync(
                 lambda: svc.run_agent(req.model, payload)
             )
+        except InputSecurityViolation:
+            return json_error(
+                400, "request blocked by content policy",
+                type_="invalid_request_error", code="content_filter",
+            )
+        except OutputSecurityViolation as exc:
+            return JSONResponse(
+                chat_completion_dict(
+                    agent=req.model,
+                    content="",
+                    input_tokens=exc.input_tokens,
+                    output_tokens=exc.output_tokens,
+                    latency_ms=0.0,
+                    cost_usd=0.0,
+                    status="content_filter",
+                    finish_reason="content_filter",
+                )
+            )
         except InvalidInputError:
             return json_error(
                 400, f"input does not fit model '{req.model}'", type_="invalid_request_error"
             )
         except AgentNotFoundError:
-            return json_error(
-                404, f"model '{req.model}' not found",
-                type_="invalid_request_error", code="model_not_found",
-            )
+            return _model_not_found(req.model)
         except (AgentLoadError, AgentExecutionError):
             return json_error(500, "internal error", type_="internal_error")
 
