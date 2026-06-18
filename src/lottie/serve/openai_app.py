@@ -48,9 +48,8 @@ def _chat_config(root: Path, name: str) -> ChatConfig | None:
         return None
 
 
-def build_openai_app(root: Path, *, service: AgentService | None = None) -> Starlette:
-    """Build a Starlette app exposing chat-capable agents over the OpenAI API."""
-    svc = service or AgentService(root)
+def openai_routes(svc: AgentService, root: Path) -> list[Route]:
+    """The OpenAI-compat routes (/v1/models, /v1/chat/completions), closed over svc + root."""
 
     def _model_not_found(model: str) -> JSONResponse:
         return json_error(
@@ -142,10 +141,13 @@ def build_openai_app(root: Path, *, service: AgentService | None = None) -> Star
             )
         )
 
-    app = Starlette(
-        routes=[
-            Route("/v1/models", list_models, methods=["GET"]),
-            Route("/v1/chat/completions", chat_completions, methods=["POST"]),
-        ]
-    )
-    return app
+    return [
+        Route("/v1/models", list_models, methods=["GET"]),
+        Route("/v1/chat/completions", chat_completions, methods=["POST"]),
+    ]
+
+
+def build_openai_app(root: Path, *, service: AgentService | None = None) -> Starlette:
+    """Build a Starlette app exposing chat-capable agents over the OpenAI API."""
+    svc = service or AgentService(root)
+    return Starlette(routes=openai_routes(svc, root))

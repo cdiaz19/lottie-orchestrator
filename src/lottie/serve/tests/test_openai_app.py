@@ -242,3 +242,15 @@ def test_http_run_enforces_budget(
         json={"model": "echo", "messages": [{"role": "user", "content": "hi"}]},
     )
     assert resp.status_code == 500  # blocked run -> AgentExecutionError -> internal_error
+
+
+def test_openai_routes_returns_two_routes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lottie.serve.openai_app import openai_routes
+    from lottie.serve.service import AgentService
+
+    demo = _chat_project(tmp_path, monkeypatch)
+    routes = openai_routes(AgentService(demo), demo)
+    paths = {r.path for r in routes}
+    assert paths == {"/v1/models", "/v1/chat/completions"}
