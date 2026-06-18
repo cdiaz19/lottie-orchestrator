@@ -19,7 +19,7 @@ from lottie.security.schema import (
     OutputCheckInput,
     SanitizeInput,
 )
-from lottie.serve.errors import SecurityViolation
+from lottie.serve.errors import InputSecurityViolation, OutputSecurityViolation
 
 
 class SecurityGate:
@@ -34,13 +34,13 @@ class SecurityGate:
     def check_input(self, text: str) -> None:
         screen = self._sanitizer.run(SanitizeInput(content=text))
         if not screen.ok:
-            raise SecurityViolation(f"input rejected: {screen.reason}")
+            raise InputSecurityViolation(f"input rejected: {screen.reason}")
         if self._injection.run(InjectionScanInput(content=text, source="serve-input")).flagged:
-            raise SecurityViolation("input rejected: prompt-injection detected")
+            raise InputSecurityViolation("input rejected: prompt-injection detected")
 
     def check_output(self, text: str) -> None:
         verdict = self._output.run(OutputCheckInput(content=text))
         if not verdict.ok:
-            raise SecurityViolation(f"output withheld: {verdict.reason}")
+            raise OutputSecurityViolation(f"output withheld: {verdict.reason}")
         if self._secrets.scan_text(text, source="serve-output"):
-            raise SecurityViolation("output withheld: secret detected")
+            raise OutputSecurityViolation("output withheld: secret detected")

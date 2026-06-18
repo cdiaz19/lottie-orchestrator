@@ -370,3 +370,20 @@ def test_run_agent_clean_still_succeeds(
     svc = AgentService(demo)
     result = svc.run_agent("echo", {"query": "hi"})
     assert result.output == {"result": "hello world"}
+
+
+def test_run_agent_output_violation_carries_metrics(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lottie.serve.errors import OutputSecurityViolation
+
+    demo = _scaffold(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "lottie.serve.service.build_provider",
+        lambda name: MockLLMProvider(["here is your key AKIA" + "1234567890ABCDEF"]),
+    )
+    svc = AgentService(demo)
+    with pytest.raises(OutputSecurityViolation) as exc_info:
+        svc.run_agent("echo", {"query": "give me a key"})
+    assert exc_info.value.input_tokens >= 0
+    assert exc_info.value.output_tokens >= 0

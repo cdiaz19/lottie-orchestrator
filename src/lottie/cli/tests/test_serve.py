@@ -41,3 +41,44 @@ def test_serve_invokes_serve_stdio_with_project_root(
     result = runner.invoke(app, ["serve"])
     assert result.exit_code == 0, result.output
     assert captured["root"] == demo
+
+
+def test_serve_port_runs_uvicorn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`lottie serve --port N` builds the OpenAI app and hands it to uvicorn.run."""
+    pytest.importorskip("starlette")
+    from lottie.cli import app
+
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "demo"])
+    demo = tmp_path / "demo"
+    monkeypatch.chdir(demo)
+
+    captured: dict[str, object] = {}
+
+    def fake_run(application: object, **kwargs: object) -> None:
+        captured["app"] = application
+        captured["port"] = kwargs.get("port")
+
+    monkeypatch.setattr("uvicorn.run", fake_run)
+    result = runner.invoke(app, ["serve", "--port", "8123"])
+    assert result.exit_code == 0
+    assert captured["port"] == 8123
+    assert captured["app"] is not None
+
+
+def test_serve_no_port_uses_stdio(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No --port keeps the existing stdio MCP path."""
+    from lottie.cli import app
+
+    called: dict[str, bool] = {"stdio": False}
+    monkeypatch.setattr(
+        "lottie.serve.mcp_server.serve_stdio",
+        lambda root: called.__setitem__("stdio", True),
+    )
+    monkeypatch.setattr(
+        "lottie.project.config.find_project_root", lambda: Path(".")
+    )
+    runner.invoke(app, ["serve"])
+    assert called["stdio"] is True
