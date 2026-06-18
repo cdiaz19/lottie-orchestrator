@@ -26,6 +26,13 @@ class LottieConfig(BaseModel):
     registry: Registry = Registry()
 
 
+class ChatConfig(BaseModel):
+    """Opt-in mapping that exposes an agent on the OpenAI chat endpoint."""
+
+    input_field: str   # last user message content -> Input.<input_field>
+    output_field: str  # Output.<output_field> -> assistant message content
+
+
 class AgentConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -36,6 +43,7 @@ class AgentConfig(BaseModel):
     workers: list[str] = []  # mesh routing allow-set (capability enforcement)
     interrupt_before: list[str] = []  # mesh workers that pause for human approval (HITL)
     budget_usd: float | None = None  # per-agent cumulative spend cap; None = unlimited
+    chat: ChatConfig | None = None  # None = agent not exposed on /v1/chat/completions
 
 
 def find_project_root(start: Path | None = None) -> Path:
