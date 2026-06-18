@@ -191,3 +191,54 @@ def test_output_security_violation_200_content_filter(
     assert choice["message"]["content"] == ""
     assert "usage" in resp.json()
     assert "AKIA" not in resp.text  # withheld content never leaks
+
+
+def test_http_run_writes_root_audit_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A top-level HTTP run is audited with root=True (contextvars copy into the
+    anyio worker thread keeps audit depth at 0 — the e99d42e / Round-9 property)."""
+    from lottie.governance.audit import SqliteAuditLogger
+    from lottie.serve.openai_app import build_openai_app
+
+    demo = _chat_project(tmp_path, monkeypatch)
+    _mock_provider(monkeypatch)
+    monkeypatch.delenv("LOTTIE_DISABLE_AUDIT", raising=False)  # opt back IN to auditing
+
+    client = TestClient(build_openai_app(demo))
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "echo", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert resp.status_code == 200
+
+    # The audit record uses the Python class name (EchoAgent), not the directory name (echo).
+    records = SqliteAuditLogger(demo).query(agent="EchoAgent")
+    assert len(records) == 1
+    assert records[0].root is True
+    assert records[0].status == "ok"
+
+
+def test_http_run_enforces_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A configured budget_usd: 0.0 blocks the HTTP run (cost gate inherited).
+
+    The cost gate blocks when prior spend >= budget (0.0 >= 0.0) and fail-closes
+    when the ledger is unreadable — so this blocks whether or not audit is enabled.
+    BudgetExceeded raises inside agent.run() -> AgentService wraps it as
+    AgentExecutionError -> mapped to 500 internal_error.
+    """
+    from lottie.serve.openai_app import build_openai_app
+
+    demo = _chat_project(tmp_path, monkeypatch)
+    _mock_provider(monkeypatch)
+    cfg = demo / "agents" / "echo" / "config.yaml"
+    cfg.write_text(cfg.read_text(encoding="utf-8") + "budget_usd: 0.0\n", encoding="utf-8")
+
+    client = TestClient(build_openai_app(demo))
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "echo", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert resp.status_code == 500  # blocked run -> AgentExecutionError -> internal_error
