@@ -32,6 +32,10 @@ otel = [
     "opentelemetry-sdk>=1.42",
     "opentelemetry-exporter-otlp-proto-http>=1.42",
 ]
+api = [
+    "starlette>=1.2.1",
+    "uvicorn>=0.49",
+]
 
 [project.scripts]
 lottie = "lottie.cli:app"
