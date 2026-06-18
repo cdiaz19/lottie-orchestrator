@@ -12,18 +12,26 @@ import time
 from pathlib import Path
 
 import anyio
+from pydantic import ValidationError
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from lottie.project.config import ChatConfig, load_agent_config
+from lottie.serve.error_map import json_error
 from lottie.serve.openai_schema import (
     ChatCompletionRequest,
     chat_completion_dict,
     last_user_message,
 )
-from lottie.serve.service import AgentService
+from lottie.serve.service import (
+    AgentExecutionError,
+    AgentLoadError,
+    AgentNotFoundError,
+    AgentService,
+    InvalidInputError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -55,21 +63,55 @@ def build_openai_app(root: Path, *, service: AgentService | None = None) -> Star
         return JSONResponse({"object": "list", "data": data})
 
     async def chat_completions(request: Request) -> JSONResponse:
-        svc_: AgentService = request.app.state.svc
-        body = await request.json()
-        req = ChatCompletionRequest.model_validate(body)
+        # 1. parse
+        try:
+            body = await request.json()
+            req = ChatCompletionRequest.model_validate(body)
+        except (ValueError, ValidationError):
+            return json_error(400, "invalid request body", type_="invalid_request_error")
 
+        # 2. streaming not supported this slice
+        if req.stream:
+            return json_error(
+                400, "streaming is not supported", type_="invalid_request_error"
+            )
+
+        # 3. resolve a chat-capable model
         chat = _chat_config(root, req.model)
-        # (error paths arrive next task; happy path assumes a valid chat-capable model)
-        assert chat is not None
+        if chat is None:
+            return json_error(
+                404,
+                f"model '{req.model}' not found",
+                type_="invalid_request_error",
+                code="model_not_found",
+            )
 
+        # 4. last user message -> typed payload
         content = last_user_message(req)
-        assert content is not None
+        if content is None:
+            return json_error(
+                400, "no user message in request", type_="invalid_request_error"
+            )
         payload = {chat.input_field: content}
 
-        result = await anyio.to_thread.run_sync(
-            lambda: svc_.run_agent(req.model, payload)
-        )
+        # 5. run through the core (off the event loop)
+        try:
+            result = await anyio.to_thread.run_sync(
+                lambda: svc.run_agent(req.model, payload)
+            )
+        except InvalidInputError:
+            return json_error(
+                400, f"input does not fit model '{req.model}'", type_="invalid_request_error"
+            )
+        except AgentNotFoundError:
+            return json_error(
+                404, f"model '{req.model}' not found",
+                type_="invalid_request_error", code="model_not_found",
+            )
+        except (AgentLoadError, AgentExecutionError):
+            return json_error(500, "internal error", type_="internal_error")
+
+        # 6. map output -> assistant content
         answer = str(result.output.get(chat.output_field, ""))
         return JSONResponse(
             chat_completion_dict(
@@ -89,5 +131,4 @@ def build_openai_app(root: Path, *, service: AgentService | None = None) -> Star
             Route("/v1/chat/completions", chat_completions, methods=["POST"]),
         ]
     )
-    app.state.svc = svc
     return app

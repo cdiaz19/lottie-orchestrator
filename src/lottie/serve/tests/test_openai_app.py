@@ -77,3 +77,66 @@ def test_chat_completion_happy_path(
     assert body["choices"][0]["finish_reason"] == "stop"
     assert body["usage"]["total_tokens"] >= 0
     assert "lottie" in body
+
+
+def test_unknown_model_404(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from lottie.serve.openai_app import build_openai_app
+
+    demo = _chat_project(tmp_path, monkeypatch)
+    client = TestClient(build_openai_app(demo))
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "nope", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "model_not_found"
+
+
+def test_non_chat_agent_404(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from lottie.serve.openai_app import build_openai_app
+
+    demo = _chat_project(tmp_path, monkeypatch)
+    client = TestClient(build_openai_app(demo))
+    resp = client.post(  # hello has no chat block
+        "/v1/chat/completions",
+        json={"model": "hello", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "model_not_found"
+
+
+def test_stream_true_400(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from lottie.serve.openai_app import build_openai_app
+
+    demo = _chat_project(tmp_path, monkeypatch)
+    client = TestClient(build_openai_app(demo))
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "echo", "messages": [{"role": "user", "content": "hi"}], "stream": True},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["type"] == "invalid_request_error"
+
+
+def test_no_user_message_400(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from lottie.serve.openai_app import build_openai_app
+
+    demo = _chat_project(tmp_path, monkeypatch)
+    _mock_provider(monkeypatch)
+    client = TestClient(build_openai_app(demo))
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "echo", "messages": [{"role": "system", "content": "x"}]},
+    )
+    assert resp.status_code == 400
+
+
+def test_malformed_body_400(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from lottie.serve.openai_app import build_openai_app
+
+    demo = _chat_project(tmp_path, monkeypatch)
+    client = TestClient(build_openai_app(demo))
+    resp = client.post(
+        "/v1/chat/completions", json={"messages": [{"role": "user", "content": "hi"}]}
+    )  # missing required `model`
+    assert resp.status_code == 400
