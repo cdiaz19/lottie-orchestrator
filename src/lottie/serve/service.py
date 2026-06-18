@@ -87,15 +87,7 @@ class AgentService:
         except Exception as exc:  # noqa: BLE001 — any agent failure → one typed error
             raise AgentExecutionError(f"agent '{name}' failed: {exc}") from exc
 
-        try:
-            self._gate.check_output(output.model_dump_json())
-        except OutputSecurityViolation as exc:
-            m = agent.last_metrics
-            raise OutputSecurityViolation(
-                str(exc),
-                input_tokens=getattr(m, "input_tokens", 0),
-                output_tokens=getattr(m, "output_tokens", 0),
-            ) from exc
+        self._check_output(agent, output)
         return self._result(name, output, agent.last_metrics)
 
     def resume_agent(
@@ -152,6 +144,23 @@ class AgentService:
             raise AgentLoadError(f"cannot load agent '{name}': {exc}") from exc
         self._agents[key] = agent
         return agent
+
+    def _check_output(
+        self,
+        agent: BaseAgent[BaseModel, BaseModel],
+        output: BaseModel,
+    ) -> None:
+        """Run the output gate; on withhold, re-raise carrying the run's token metrics
+        so an HTTP transport can report `usage` for the (already-executed) run."""
+        try:
+            self._gate.check_output(output.model_dump_json())
+        except OutputSecurityViolation as exc:
+            m = agent.last_metrics
+            raise OutputSecurityViolation(
+                str(exc),
+                input_tokens=getattr(m, "input_tokens", 0),
+                output_tokens=getattr(m, "output_tokens", 0),
+            ) from exc
 
     def _result(
         self,
