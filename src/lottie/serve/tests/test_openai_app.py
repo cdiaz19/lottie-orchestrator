@@ -323,3 +323,27 @@ def test_openai_routes_returns_two_routes(
     routes = openai_routes(AgentService(demo), demo)
     paths = {r.path for r in routes}
     assert paths == {"/v1/models", "/v1/chat/completions"}
+
+
+def test_stream_run_writes_root_audit_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A streamed (stream:true) run is audited with root=True — governance inherited on the
+    streaming path too (the output gate + BaseAgent.run fire before any byte streams)."""
+    from lottie.governance.audit import SqliteAuditLogger
+    from lottie.serve.openai_app import build_openai_app
+
+    demo = _chat_project(tmp_path, monkeypatch)
+    _mock_provider(monkeypatch)
+    monkeypatch.delenv("LOTTIE_DISABLE_AUDIT", raising=False)
+
+    client = TestClient(build_openai_app(demo))
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "echo", "messages": [{"role": "user", "content": "hi"}], "stream": True},
+    )
+    assert resp.status_code == 200
+    records = SqliteAuditLogger(demo).query(agent="EchoAgent")  # audit name = class name
+    assert len(records) == 1
+    assert records[0].root is True
+    assert records[0].status == "ok"
