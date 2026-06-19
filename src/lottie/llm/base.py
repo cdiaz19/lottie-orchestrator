@@ -8,7 +8,7 @@ vendor SDK directly.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -54,3 +54,16 @@ class LLMProvider(ABC):
         model_params: Mapping[str, object] | None = None,
     ) -> LLMResponse:
         """Run a completion and return a normalized `LLMResponse`."""
+
+    def stream(
+        self,
+        messages: list[Message],
+        model_params: Mapping[str, object] | None = None,
+    ) -> Iterator[str]:
+        """Yield assistant content deltas as they are produced.
+
+        Default: a one-shot fallback that yields the whole `complete()` content in a single delta,
+        so a provider implementing only `complete` still satisfies the streaming interface (no
+        incremental latency). Real providers override this with true incremental streaming.
+        """
+        yield self.complete(messages, model_params).content

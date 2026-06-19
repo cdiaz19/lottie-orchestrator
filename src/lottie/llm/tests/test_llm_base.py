@@ -63,3 +63,20 @@ def test_build_provider_returns_litellm_provider() -> None:
     provider = build_provider("anthropic/claude-sonnet-4-6")
     assert isinstance(provider, LiteLLMProvider)
     assert provider.model == "anthropic/claude-sonnet-4-6"
+
+
+def test_stream_default_yields_complete_content_once() -> None:
+    class OneShot(LLMProvider):
+        @property
+        def model(self) -> str:
+            return "one/shot"
+
+        def complete(
+            self,
+            messages: list[Message],
+            model_params: Mapping[str, object] | None = None,
+        ) -> LLMResponse:
+            return LLMResponse(content="hello world", model=self.model)
+
+    deltas = list(OneShot().stream([Message(role="user", content="hi")]))
+    assert deltas == ["hello world"]  # default = one delta over complete()
