@@ -34,10 +34,10 @@ def serve(
     try:
         import uvicorn
 
-        from lottie.serve.openai_app import build_openai_app
+        from lottie.serve.http_app import build_http_app
     except ImportError as exc:
         raise typer.BadParameter(
             "lottie serve --port needs the HTTP API deps. "
             "Install: pip install lottie-orchestrator[api]"
         ) from exc
-    uvicorn.run(build_openai_app(root), host=host, port=port)
+    uvicorn.run(build_http_app(root), host=host, port=port)

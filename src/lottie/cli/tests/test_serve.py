@@ -65,7 +65,11 @@ def test_serve_port_runs_uvicorn(
     result = runner.invoke(app, ["serve", "--port", "8123"])
     assert result.exit_code == 0
     assert captured["port"] == 8123
-    assert captured["app"] is not None
+    served = captured["app"]
+    assert served is not None
+    paths = {r.path for r in served.routes}  # type: ignore[attr-defined]
+    assert "/v1/agents" in paths        # REST group present -> build_http_app
+    assert "/v1/chat/completions" in paths  # OpenAI group present
 
 
 def test_serve_no_port_uses_stdio(monkeypatch: pytest.MonkeyPatch) -> None:
