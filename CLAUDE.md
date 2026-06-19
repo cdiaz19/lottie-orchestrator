@@ -103,6 +103,8 @@ lottie run <agent> --provider openai   # override provider for this run
 lottie serve                           # start the MCP stdio server (one tool per agent)
 lottie serve --port 8000               # HTTP API: OpenAI-compat (/v1/chat/completions, /v1/models)
                                        #   + Lottie REST (/v1/agents, /v1/agents/{name}/run) — needs [api]
+                                       #   resume an interrupted mesh: POST /v1/agents/{name}/resume {thread_id, decision}
+                                       #   durable across restarts when served (LOTTIE_MESH_CHECKPOINT=sqlite, set by serve --port)
 
 # Knowledge
 lottie knowledge ingest ./docs         # ingest docs into knowledge layer
