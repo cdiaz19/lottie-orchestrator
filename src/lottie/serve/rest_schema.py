@@ -5,7 +5,23 @@ output stripped and status="withheld" (the run executed; the body is withheld, n
 
 from __future__ import annotations
 
+from typing import Literal
+
+from pydantic import BaseModel
+
 from lottie.serve.schema import AgentInfo, RunResult
+
+
+class ResumeDecision(BaseModel):
+    """A human HITL decision, mesh-import-free (converted to ApprovalDecision in the service)."""
+
+    action: Literal["approve", "reject"]
+    edited_input: dict[str, str] = {}
+
+
+class ResumeRequest(BaseModel):
+    thread_id: str
+    decision: ResumeDecision
 
 
 def agent_list_dict(infos: list[AgentInfo]) -> dict[str, object]:
