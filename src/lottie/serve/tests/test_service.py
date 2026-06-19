@@ -341,56 +341,9 @@ def test_service_surfaces_interrupted_and_resumes(
     except ImportError:
         pytest.skip("needs [mesh] extra")
 
-    from lottie.cli import app
     from lottie.mesh.schema import ApprovalDecision
 
-    monkeypatch.chdir(tmp_path)
-    assert runner.invoke(app, ["init", "demo"]).exit_code == 0
-    demo = tmp_path / "demo"
-    monkeypatch.chdir(demo)
-
-    # Write a minimal mesh agent unit under agents/gate/ (agent/schema/config/doc).
-    gate = demo / "agents" / "gate"
-    gate.mkdir(parents=True)
-    (gate / "__init__.py").write_text("", encoding="utf-8")
-    (gate / "schema.py").write_text(
-        "from __future__ import annotations\n"
-        "from lottie.mesh.schema import MeshInput, MeshOutput\n"
-        "class GateInput(MeshInput):\n    pass\n"
-        "class GateOutput(MeshOutput):\n    pass\n",
-        encoding="utf-8",
-    )
-    (gate / "agent.py").write_text(
-        "from __future__ import annotations\n"
-        "from pathlib import Path\n"
-        "from lottie.llm import LLMProvider\n"
-        "from lottie.mesh import MeshAgent, MeshState, StepResult\n"
-        "from lottie.mesh.langgraph_engine import LangGraphEngine\n"
-        "from lottie.project.config import AgentConfig\n"
-        "def _deploy(state: MeshState) -> MeshState:\n"
-        "    return state.with_step("
-        "StepResult(worker='deploy', result='shipped'))\n"
-        "class GateMesh(MeshAgent):\n"
-        "    @classmethod\n"
-        "    def from_project(cls, *, llm: LLMProvider, root: Path,"
-        " config: AgentConfig, enable_benchmarks=None):\n"
-        "        return cls(llm, nodes={'deploy': _deploy},"
-        " descriptions={'deploy': 'ships'},\n"
-        "                   engine=LangGraphEngine(interrupt_before=['deploy']),"
-        " enable_benchmarks=enable_benchmarks)\n",
-        encoding="utf-8",
-    )
-    (gate / "config.yaml").write_text(
-        "provider: mock/x\nworkers: [deploy]\ninterrupt_before: [deploy]\npolicies: [base]\n",
-        encoding="utf-8",
-    )
-    (gate / "AGENT.md").write_text("# gate mesh\n", encoding="utf-8")
-
-    monkeypatch.setattr(
-        "lottie.serve.service.build_provider",
-        lambda name: MockLLMProvider(["deploy", "FINISH", "FINISH"]),
-    )
-
+    demo = _gate_mesh_project(tmp_path, monkeypatch)
     svc = AgentService(demo)
     res = svc.run_agent("gate", {"task": "ship"})
     assert res.status == "interrupted"
