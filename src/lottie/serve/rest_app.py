@@ -9,14 +9,27 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import anyio
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from lottie.serve.error_map import json_error
-from lottie.serve.rest_schema import agent_detail_dict, agent_list_dict
-from lottie.serve.service import AgentService
+from lottie.serve.errors import InputSecurityViolation, OutputSecurityViolation
+from lottie.serve.rest_schema import (
+    agent_detail_dict,
+    agent_list_dict,
+    run_result_dict,
+    withheld_dict,
+)
+from lottie.serve.service import (
+    AgentExecutionError,
+    AgentLoadError,
+    AgentNotFoundError,
+    AgentService,
+    InvalidInputError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +54,38 @@ def rest_routes(svc: AgentService, root: Path) -> list[Route]:
             return json_error(500, "internal error", type_="internal_error")
         return JSONResponse(agent_detail_dict(name, provider, schema))
 
+    async def run_agent_route(request: Request) -> JSONResponse:
+        name = request.path_params["name"]
+        try:
+            body = await request.json()
+        except ValueError:
+            return json_error(400, "invalid request body", type_="invalid_request")
+        if not isinstance(body, dict):
+            return json_error(400, "request body must be a JSON object", type_="invalid_request")
+
+        try:
+            result = await anyio.to_thread.run_sync(lambda: svc.run_agent(name, body))
+        except InputSecurityViolation:
+            return json_error(
+                400, "request blocked by content policy", type_="content_filter"
+            )
+        except OutputSecurityViolation as exc:
+            return JSONResponse(
+                withheld_dict(name, input_tokens=exc.input_tokens, output_tokens=exc.output_tokens)
+            )
+        except InvalidInputError:
+            return json_error(400, f"input does not fit agent '{name}'", type_="invalid_request")
+        except AgentNotFoundError:
+            return json_error(404, f"agent '{name}' not found", type_="not_found")
+        except (AgentLoadError, AgentExecutionError):
+            return json_error(500, "internal error", type_="internal_error")
+
+        return JSONResponse(run_result_dict(result))
+
     return [
         Route("/v1/agents", list_agents, methods=["GET"]),
         Route("/v1/agents/{name}", agent_detail, methods=["GET"]),
+        Route("/v1/agents/{name}/run", run_agent_route, methods=["POST"]),
     ]
 
 
