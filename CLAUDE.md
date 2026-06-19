@@ -105,6 +105,7 @@ lottie serve --port 8000               # HTTP API: OpenAI-compat (/v1/chat/compl
                                        #   + Lottie REST (/v1/agents, /v1/agents/{name}/run) — needs [api]
                                        #   resume an interrupted mesh: POST /v1/agents/{name}/resume {thread_id, decision}
                                        #   durable across restarts when served (LOTTIE_MESH_CHECKPOINT=sqlite, set by serve --port)
+                                       #   stream:true on /v1/chat/completions -> text/event-stream SSE (format-level; real token streaming deferred)
 
 # Knowledge
 lottie knowledge ingest ./docs         # ingest docs into knowledge layer

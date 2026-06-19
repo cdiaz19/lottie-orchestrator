@@ -85,7 +85,7 @@ lottie serve --port 8000
 - **OpenAI-compatible** — `POST /v1/chat/completions` + `GET /v1/models`. Point any OpenAI client's base URL here; an agent opts in by declaring a `chat: {input_field, output_field}` block in its `config.yaml`.
 - **Lottie REST** — `GET /v1/agents`, `GET /v1/agents/{name}` (Input JSON schema), `POST /v1/agents/{name}/run` (the agent's typed Input → the full `RunResult`). Every agent is reachable, no opt-in. A mesh that hits a human-in-the-loop gate returns `status:"interrupted"` + a `thread_id`; resume it with `POST /v1/agents/{name}/resume` (`{thread_id, decision}`) — **durable across restarts/workers** when served (the engine checkpoints to sqlite; `LOTTIE_MESH_CHECKPOINT=sqlite` is set by `serve --port`).
 
-Non-streaming for now; a dead/over-budget run fails closed (governance is inherited from the run chokepoint).
+`stream:true` on the chat endpoint returns a `text/event-stream` (SSE) response — format-level: the agent runs fully, then streams its output as OpenAI `chat.completion.chunk` events (real token-by-token streaming is still deferred). A dead/over-budget run fails closed (governance is inherited from the run chokepoint).
 
 ## Testing
 

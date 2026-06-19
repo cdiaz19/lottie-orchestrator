@@ -15,7 +15,7 @@ import anyio
 from pydantic import ValidationError
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
 from lottie.project.config import ChatConfig, load_agent_config
@@ -23,6 +23,7 @@ from lottie.serve.error_map import json_error
 from lottie.serve.errors import InputSecurityViolation, OutputSecurityViolation
 from lottie.serve.openai_schema import (
     ChatCompletionRequest,
+    chat_completion_chunks,
     chat_completion_dict,
     last_user_message,
 )
@@ -57,6 +58,13 @@ def openai_routes(svc: AgentService, root: Path) -> list[Route]:
             type_="invalid_request_error", code="model_not_found",
         )
 
+    def _stream_response(agent: str, content: str, finish_reason: str) -> StreamingResponse:
+        """SSE response of a completed chat result — role/content/finish chunks + [DONE]."""
+        return StreamingResponse(
+            iter(chat_completion_chunks(agent=agent, content=content, finish_reason=finish_reason)),
+            media_type="text/event-stream",
+        )
+
     async def list_models(request: Request) -> JSONResponse:
         from lottie.project.discovery import discover_agents
 
@@ -68,19 +76,13 @@ def openai_routes(svc: AgentService, root: Path) -> list[Route]:
         ]
         return JSONResponse({"object": "list", "data": data})
 
-    async def chat_completions(request: Request) -> JSONResponse:
+    async def chat_completions(request: Request) -> Response:
         # 1. parse
         try:
             body = await request.json()
             req = ChatCompletionRequest.model_validate(body)
         except (ValueError, ValidationError):
             return json_error(400, "invalid request body", type_="invalid_request_error")
-
-        # 2. streaming not supported this slice
-        if req.stream:
-            return json_error(
-                400, "streaming is not supported", type_="invalid_request_error"
-            )
 
         # 3. resolve a chat-capable model
         chat = _chat_config(root, req.model)
@@ -106,6 +108,8 @@ def openai_routes(svc: AgentService, root: Path) -> list[Route]:
                 type_="invalid_request_error", code="content_filter",
             )
         except OutputSecurityViolation as exc:
+            if req.stream:
+                return _stream_response(req.model, "", "content_filter")
             return JSONResponse(
                 chat_completion_dict(
                     agent=req.model,
@@ -129,6 +133,8 @@ def openai_routes(svc: AgentService, root: Path) -> list[Route]:
 
         # 6. map output -> assistant content
         answer = str(result.output.get(chat.output_field, ""))
+        if req.stream:
+            return _stream_response(req.model, answer, "stop")
         return JSONResponse(
             chat_completion_dict(
                 agent=req.model,
