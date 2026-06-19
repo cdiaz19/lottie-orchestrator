@@ -7,7 +7,8 @@ Unit tests must never call a real provider (CLAUDE.md rule 5).
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import re
+from collections.abc import Iterator, Mapping
 
 from lottie.llm.base import LLMProvider, LLMResponse, Message, TokenUsage
 
@@ -38,3 +39,20 @@ class MockLLMProvider(LLMProvider):
         content = self._responses[self._index]
         self._index += 1
         return LLMResponse(content=content, usage=TokenUsage(), model=self._model)
+
+    def stream(
+        self,
+        messages: list[Message],
+        model_params: Mapping[str, object] | None = None,
+    ) -> Iterator[str]:
+        """Replay the next canned response as multiple deltas (so tests see real chunking).
+
+        Consumes the same response queue as `complete` (records the call, advances the index), then
+        yields pieces that reconstruct the response EXACTLY (`"".join(deltas) == response`)."""
+        self.calls.append(messages)
+        if self._index >= len(self._responses):
+            raise RuntimeError("MockLLMProvider responses exhausted")
+        content = self._responses[self._index]
+        self._index += 1
+        # non-space-run+trailing-space and pure-space runs both captured -> join == content.
+        yield from re.findall(r"\S+\s*|\s+", content)

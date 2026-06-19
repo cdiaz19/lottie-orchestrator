@@ -57,3 +57,30 @@ def test_mock_accepts_model_params_without_error() -> None:
     params: Mapping[str, object] = {"temperature": 0.1}
     resp = provider.complete([Message(role="user", content="a")], model_params=params)
     assert resp.content == "x"
+
+
+def test_mock_stream_reconstructs_response() -> None:
+    p = MockLLMProvider(["the launch post"])
+    deltas = list(p.stream([Message(role="user", content="x")]))
+    assert len(deltas) > 1  # multiple deltas for a multi-word response
+    assert "".join(deltas) == "the launch post"  # reconstructs exactly
+
+
+def test_mock_stream_single_token_one_delta() -> None:
+    p = MockLLMProvider(["hi"])
+    assert list(p.stream([Message(role="user", content="x")])) == ["hi"]
+
+
+def test_mock_stream_advances_queue_and_records_call() -> None:
+    p = MockLLMProvider(["first", "second"])
+    list(p.stream([Message(role="user", content="a")]))
+    assert len(p.calls) == 1
+    # the queue advanced — a following complete() gets the SECOND response
+    assert p.complete([Message(role="user", content="b")]).content == "second"
+
+
+def test_mock_stream_raises_when_exhausted() -> None:
+    p = MockLLMProvider(["only"])
+    list(p.stream([Message(role="user", content="a")]))
+    with pytest.raises(RuntimeError):
+        list(p.stream([Message(role="user", content="b")]))
