@@ -325,3 +325,38 @@ def test_resume_bad_body_400(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     resp = client.post("/v1/agents/echo/resume", json={"decision": {"action": "approve"}})
     assert resp.status_code == 400
     assert resp.json()["error"]["type"] == "invalid_request"
+
+
+def test_resume_writes_audit_record(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A resume run is audited (governance inherited on the resume path)."""
+    _needs_mesh()
+    from lottie.governance.audit import SqliteAuditLogger
+    from lottie.serve.rest_app import build_rest_app
+
+    demo = _gate_mesh_project(tmp_path, monkeypatch)
+    monkeypatch.delenv("LOTTIE_DISABLE_AUDIT", raising=False)
+    client = TestClient(build_rest_app(demo))
+    started = client.post("/v1/agents/gate/run", json={"task": "ship"})
+    tid = started.json()["thread_id"]
+    client.post(
+        "/v1/agents/gate/resume",
+        json={"thread_id": tid, "decision": {"action": "approve"}},
+    )
+    # GateMesh's class name is the audit key; at least one record exists for the run+resume.
+    records = SqliteAuditLogger(demo).query(agent="GateMesh")
+    assert len(records) >= 1
+    assert any(r.status == "ok" for r in records)
+
+
+def test_rest_modules_are_mesh_import_free() -> None:
+    """rest_app/rest_schema must not import lottie.mesh at source level (keeps [api]-without-[mesh]
+    importable; the ResumeDecision->ApprovalDecision convert is lazy in service.py)."""
+    import pathlib
+
+    import lottie.serve.rest_app as ra
+    import lottie.serve.rest_schema as rs
+
+    for mod in (ra, rs):
+        assert mod.__file__ is not None, f"{mod.__name__} has no __file__"
+        src = pathlib.Path(mod.__file__).read_text(encoding="utf-8")
+        assert "lottie.mesh" not in src, f"{mod.__name__} imports lottie.mesh"
