@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -28,19 +29,26 @@ except ImportError:
     _HAS_LANGGRAPH = False
 
 
+def _resolve_checkpoint(arg: str | None) -> str:
+    """Checkpoint backend precedence: explicit arg > LOTTIE_MESH_CHECKPOINT env > 'memory'."""
+    if arg is not None:
+        return arg
+    return os.getenv("LOTTIE_MESH_CHECKPOINT", "memory")
+
+
 class LangGraphEngine(MeshEngine):
     """Runs the supervisor→worker mesh on a compiled LangGraph StateGraph."""
 
     def __init__(
         self,
         *,
-        checkpoint: str = "memory",
+        checkpoint: str | None = None,
         root: Path | None = None,
         interrupt_before: list[str] | None = None,
     ) -> None:
         if not _HAS_LANGGRAPH:
             raise MeshError("LangGraphEngine requires: pip install lottie-orchestrator[mesh]")
-        self._checkpoint = checkpoint
+        self._checkpoint = _resolve_checkpoint(checkpoint)
         self._root = root
         self._interrupt_before = list(interrupt_before or [])
         self._saver: Any = None

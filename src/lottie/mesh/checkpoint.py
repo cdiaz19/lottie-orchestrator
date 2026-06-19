@@ -22,7 +22,7 @@ def build_checkpointer(kind: str = "memory", root: Path | None = None) -> BaseCh
 
     if kind == "memory":
         return MemorySaver()
-    if kind == "sqlite":  # pragma: no cover - not exercised in the hermetic suite
+    if kind == "sqlite":
         import sqlite3
 
         from langgraph.checkpoint.sqlite import SqliteSaver
