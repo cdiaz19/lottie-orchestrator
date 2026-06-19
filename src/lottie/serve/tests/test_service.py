@@ -242,17 +242,95 @@ def test_run_agent_from_project_failure_raises_load_error(
     assert "bogus" in str(exc_info.value)
 
 
-def test_resume_agent_on_non_mesh_raises_execution_error(
+def _gate_mesh_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, checkpoint: str = "memory"
+) -> Path:
+    """Scaffold a project with a `gate` mesh agent whose engine uses the given checkpoint."""
+    from lottie.cli import app
+
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["init", "demo"]).exit_code == 0
+    demo = tmp_path / "demo"
+    monkeypatch.chdir(demo)
+    gate = demo / "agents" / "gate"
+    gate.mkdir(parents=True)
+    (gate / "__init__.py").write_text("", encoding="utf-8")
+    (gate / "schema.py").write_text(
+        "from __future__ import annotations\n"
+        "from lottie.mesh.schema import MeshInput, MeshOutput\n"
+        "class GateInput(MeshInput):\n    pass\n"
+        "class GateOutput(MeshOutput):\n    pass\n",
+        encoding="utf-8",
+    )
+    (gate / "agent.py").write_text(
+        "from __future__ import annotations\n"
+        "from pathlib import Path\n"
+        "from lottie.llm import LLMProvider\n"
+        "from lottie.mesh import MeshAgent, MeshState, StepResult\n"
+        "from lottie.mesh.langgraph_engine import LangGraphEngine\n"
+        "from lottie.project.config import AgentConfig\n"
+        "def _deploy(state: MeshState) -> MeshState:\n"
+        "    return state.with_step(StepResult(worker='deploy', result='shipped'))\n"
+        "class GateMesh(MeshAgent):\n"
+        "    @classmethod\n"
+        "    def from_project(cls, *, llm: LLMProvider, root: Path, config: AgentConfig,"
+        " enable_benchmarks=None):\n"
+        f"        engine = LangGraphEngine(checkpoint={checkpoint!r}, root=root,"
+        " interrupt_before=['deploy'])\n"
+        "        return cls(llm, nodes={'deploy': _deploy},"
+        " descriptions={'deploy': 'ships'}, engine=engine,"
+        " enable_benchmarks=enable_benchmarks)\n",
+        encoding="utf-8",
+    )
+    (gate / "config.yaml").write_text(
+        "provider: mock/x\nworkers: [deploy]\ninterrupt_before: [deploy]\npolicies: [base]\n",
+        encoding="utf-8",
+    )
+    (gate / "AGENT.md").write_text("# gate mesh\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "lottie.serve.service.build_provider",
+        lambda name: MockLLMProvider(["deploy", "FINISH", "FINISH"]),
+    )
+    return demo
+
+
+def test_resume_agent_on_non_mesh_raises_not_resumable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A plain agent has no `resume` — resume_agent must reject it cleanly."""
-    from lottie.mesh.schema import ApprovalDecision
+    """A plain agent has no HITL resume — resume_agent must reject it as NotResumable."""
+    from lottie.serve.errors import NotResumable
 
     demo = _scaffold(tmp_path, monkeypatch)
     _mock_provider(monkeypatch)
     svc = AgentService(demo)
-    with pytest.raises(AgentExecutionError, match="does not support resume"):
-        svc.resume_agent("echo", "t1", ApprovalDecision(action="approve"))
+
+    class _D:
+        action = "approve"
+        edited_input: dict[str, str] = {}
+
+    with pytest.raises(NotResumable):
+        svc.resume_agent("echo", "t1", _D())
+
+
+def test_resume_agent_unknown_thread_maps_to_thread_not_found(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    try:
+        import langgraph  # noqa: F401
+    except ImportError:
+        pytest.skip("needs [mesh] extra")
+    from lottie.serve.errors import ThreadNotFound
+
+    demo = _gate_mesh_project(tmp_path, monkeypatch, checkpoint="sqlite")
+    svc = AgentService(demo)
+    svc.run_agent("gate", {"task": "ship"})  # creates a checkpoint under a real thread
+
+    class _D:
+        action = "approve"
+        edited_input: dict[str, str] = {}
+
+    with pytest.raises(ThreadNotFound):
+        svc.resume_agent("gate", "no-such-thread", _D())
 
 
 def test_service_surfaces_interrupted_and_resumes(
@@ -321,8 +399,10 @@ def test_service_surfaces_interrupted_and_resumes(
     assert resumed.status == "complete"
 
     # An unknown thread makes the underlying resume() raise; the service must
-    # translate any such failure into a single typed AgentExecutionError.
-    with pytest.raises(AgentExecutionError) as exc_info:
+    # translate it into a typed ThreadNotFound (a ServeError leaf).
+    from lottie.serve.errors import ThreadNotFound
+
+    with pytest.raises(ThreadNotFound) as exc_info:
         svc.resume_agent("gate", "no-such-thread", ApprovalDecision(action="approve"))
     assert exc_info.value.__cause__ is not None
 

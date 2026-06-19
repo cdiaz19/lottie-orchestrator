@@ -30,3 +30,11 @@ class OutputSecurityViolation(SecurityViolation):
         super().__init__(message)
         self.input_tokens = input_tokens
         self.output_tokens = output_tokens
+
+
+class NotResumable(ServeError):
+    """The agent exists but cannot be resumed (not a mesh / no HITL)."""
+
+
+class ThreadNotFound(ServeError):
+    """No checkpoint exists for the given thread_id (never existed or pruned)."""

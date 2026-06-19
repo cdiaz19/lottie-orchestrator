@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Protocol
 
 from pydantic import BaseModel, ValidationError
 
@@ -17,9 +18,22 @@ from lottie.project.discovery import (
     load_agent_class,
     load_input_model,
 )
-from lottie.serve.errors import OutputSecurityViolation, ServeError
+from lottie.serve.errors import (
+    NotResumable,
+    OutputSecurityViolation,
+    ServeError,
+    ThreadNotFound,
+)
 from lottie.serve.schema import AgentInfo, RunResult
 from lottie.serve.security import SecurityGate
+
+
+class _ResumeDecision(Protocol):
+    @property
+    def action(self) -> str: ...
+
+    @property
+    def edited_input(self) -> dict[str, str]: ...
 
 
 class AgentNotFoundError(ServeError):
@@ -94,28 +108,34 @@ class AgentService:
         self,
         name: str,
         thread_id: str,
-        decision: object,
+        decision: _ResumeDecision,
     ) -> RunResult:
         """Resume an interrupted mesh agent from its checkpoint.
 
-        NOTE: with the in-memory checkpointer the checkpoint is process-local, so
-        this only works within the same process that ran the agent (the cached
-        agent shares its engine's memoized MemorySaver). Durable cross-process
-        resume requires the sqlite checkpointer (out of scope here).
+        Durable when the engine uses the sqlite checkpointer (the `lottie serve --port`
+        default, via LOTTIE_MESH_CHECKPOINT=sqlite): a fresh process rebuilds the agent by
+        name and rehydrates the thread from the shared db. With the in-memory checkpointer it
+        is process-local (only the process that ran the interrupt can resume).
         """
+        # lazy imports: keep serve importable without the [mesh] extra
+        from lottie.mesh.errors import ThreadNotFoundError
+        from lottie.mesh.schema import ApprovalDecision
+
         self._require_agent(name)
         agent = self._get_agent(name, None)
         resume = getattr(agent, "resume", None)
         if resume is None:
-            raise AgentExecutionError(
-                f"agent '{name}' does not support resume (not a mesh)"
-            )
+            raise NotResumable(f"agent '{name}' is not resumable (not a mesh)")
+        approval = ApprovalDecision.model_validate(
+            {"action": decision.action, "edited_input": dict(decision.edited_input)}
+        )
         try:
-            output = resume(thread_id, decision)
-        except Exception as exc:  # noqa: BLE001 — any agent failure → one typed error
+            output = resume(thread_id, approval)
+        except ThreadNotFoundError as exc:
+            raise ThreadNotFound(f"thread '{thread_id}' not found") from exc
+        except Exception as exc:  # noqa: BLE001 — any other failure → one typed error
             raise AgentExecutionError(f"agent '{name}' failed: {exc}") from exc
-
-        self._gate.check_output(output.model_dump_json())
+        self._check_output(agent, output)
         return self._result(name, output, agent.last_metrics)
 
     def _require_agent(self, name: str) -> None:
