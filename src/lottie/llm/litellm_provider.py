@@ -48,10 +48,13 @@ class LiteLLMProvider(LLMProvider):
         model_params: Mapping[str, object] | None = None,
     ) -> Iterator[str]:
         params = dict(model_params or {})
+        params.pop("stream", None)  # the streaming path owns the flag; ignore a caller-set one
         payload = [{"role": m.role, "content": m.content} for m in messages]
         for chunk in litellm.completion(
             model=self._model, messages=payload, stream=True, **params
         ):
+            if not chunk.choices:  # usage-only / sentinel chunk -> no delta
+                continue
             delta = chunk.choices[0].delta.content
             if delta:
                 yield delta

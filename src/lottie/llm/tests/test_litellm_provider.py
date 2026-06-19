@@ -133,3 +133,36 @@ def test_stream_yields_content_deltas_skipping_empties(
     assert captured["stream"] is True
     assert captured["model"] == "openai/gpt-4o"
     assert captured["messages"] == [{"role": "user", "content": "q"}]
+
+
+def test_stream_skips_choiceless_chunk(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A usage-only / sentinel chunk with choices=[] must not crash the stream (IndexError)."""
+
+    def _chunk(text: Any) -> Any:
+        return SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=text))])
+
+    def fake_completion(**_: Any) -> Any:
+        return iter([_chunk("hello "), SimpleNamespace(choices=[]), _chunk("world")])
+
+    monkeypatch.setattr("lottie.llm.litellm_provider.litellm.completion", fake_completion)
+    provider = LiteLLMProvider(model="openai/gpt-4o")
+    assert list(provider.stream([Message(role="user", content="q")])) == ["hello ", "world"]
+
+
+def test_stream_ignores_caller_supplied_stream_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    """model_params may carry stream=False (from config); the streaming path forces stream=True
+    without a 'multiple values for stream' TypeError."""
+    captured: dict[str, Any] = {}
+
+    def fake_completion(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        chunk = SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content="ok"))])
+        return iter([chunk])
+
+    monkeypatch.setattr("lottie.llm.litellm_provider.litellm.completion", fake_completion)
+    provider = LiteLLMProvider(model="openai/gpt-4o")
+    result = list(
+        provider.stream([Message(role="user", content="q")], model_params={"stream": False})
+    )
+    assert result == ["ok"]
+    assert captured["stream"] is True
