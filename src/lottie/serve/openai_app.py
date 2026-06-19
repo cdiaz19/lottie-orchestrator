@@ -58,6 +58,13 @@ def openai_routes(svc: AgentService, root: Path) -> list[Route]:
             type_="invalid_request_error", code="model_not_found",
         )
 
+    def _stream_response(agent: str, content: str, finish_reason: str) -> StreamingResponse:
+        """SSE response of a completed chat result — role/content/finish chunks + [DONE]."""
+        return StreamingResponse(
+            iter(chat_completion_chunks(agent=agent, content=content, finish_reason=finish_reason)),
+            media_type="text/event-stream",
+        )
+
     async def list_models(request: Request) -> JSONResponse:
         from lottie.project.discovery import discover_agents
 
@@ -102,12 +109,7 @@ def openai_routes(svc: AgentService, root: Path) -> list[Route]:
             )
         except OutputSecurityViolation as exc:
             if req.stream:
-                return StreamingResponse(
-                    iter(chat_completion_chunks(
-                        agent=req.model, content="", finish_reason="content_filter"
-                    )),
-                    media_type="text/event-stream",
-                )
+                return _stream_response(req.model, "", "content_filter")
             return JSONResponse(
                 chat_completion_dict(
                     agent=req.model,
@@ -132,12 +134,7 @@ def openai_routes(svc: AgentService, root: Path) -> list[Route]:
         # 6. map output -> assistant content
         answer = str(result.output.get(chat.output_field, ""))
         if req.stream:
-            return StreamingResponse(
-                iter(chat_completion_chunks(
-                    agent=req.model, content=answer, finish_reason="stop"
-                )),
-                media_type="text/event-stream",
-            )
+            return _stream_response(req.model, answer, "stop")
         return JSONResponse(
             chat_completion_dict(
                 agent=req.model,
