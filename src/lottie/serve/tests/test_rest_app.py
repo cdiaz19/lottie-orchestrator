@@ -150,3 +150,40 @@ def test_run_output_withheld_200(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert body["output"] == {}
     assert "input_tokens" in body
     assert "AKIA" not in resp.text
+
+
+def test_rest_run_writes_root_audit_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A top-level REST run is audited with root=True (governance inherited, no second gate)."""
+    from lottie.governance.audit import SqliteAuditLogger
+    from lottie.serve.rest_app import build_rest_app
+
+    demo = _project(tmp_path, monkeypatch)
+    _mock_provider(monkeypatch)
+    monkeypatch.delenv("LOTTIE_DISABLE_AUDIT", raising=False)  # opt audit back IN
+
+    client = TestClient(build_rest_app(demo))
+    resp = client.post("/v1/agents/echo/run", json={"query": "hi"})
+    assert resp.status_code == 200
+
+    records = SqliteAuditLogger(demo).query(agent="EchoAgent")  # audit name = class name
+    assert len(records) == 1
+    assert records[0].root is True
+    assert records[0].status == "ok"
+
+
+def test_rest_run_enforces_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A configured budget_usd: 0.0 blocks the REST run (cost gate inherited -> 500)."""
+    from lottie.serve.rest_app import build_rest_app
+
+    demo = _project(tmp_path, monkeypatch)
+    _mock_provider(monkeypatch)
+    cfg = demo / "agents" / "echo" / "config.yaml"
+    cfg.write_text(cfg.read_text(encoding="utf-8") + "budget_usd: 0.0\n", encoding="utf-8")
+
+    client = TestClient(build_rest_app(demo))
+    resp = client.post("/v1/agents/echo/run", json={"query": "hi"})
+    assert resp.status_code == 500  # BudgetExceeded -> AgentExecutionError -> internal_error
