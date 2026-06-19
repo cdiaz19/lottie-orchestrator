@@ -126,6 +126,9 @@ class AgentService:
         resume = getattr(agent, "resume", None)
         if resume is None:
             raise NotResumable(f"agent '{name}' is not resumable (not a mesh)")
+        # Precondition: REST handler validates ResumeRequest (action is a Literal) before this,
+        # so the conversion cannot fail on the transport path; a direct caller passing a malformed
+        # decision would surface a ValidationError here (acceptable — single validated transport).
         approval = ApprovalDecision.model_validate(
             {"action": decision.action, "edited_input": dict(decision.edited_input)}
         )

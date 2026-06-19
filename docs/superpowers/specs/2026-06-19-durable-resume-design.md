@@ -117,8 +117,9 @@ snapshot before doing any work:
 ```
 
 This catches both downstream failure modes uniformly and never lets a raw langgraph/pydantic exception
-leak (the FG-1 / yaml-ParserError discipline). The `LocalEngine.resume` (zero-dep path) is updated to
-raise the same `ThreadNotFoundError` for an unknown thread, so the contract holds regardless of engine.
+leak (the FG-1 / yaml-ParserError discipline). `LocalEngine.resume` is unchanged — it raises `MeshError`
+unconditionally (HITL resume requires `LangGraphEngine`); it has no checkpoint store, so the
+`ThreadNotFoundError` path is LangGraph-only.
 
 ## 5. Service layer — `AgentService.resume_agent`
 
@@ -275,6 +276,10 @@ All HTTP tests `pytest.importorskip("starlette")`-guarded; mesh tests `importors
   `status="interrupted"` + `thread_id`; `POST /resume` {thread_id, decision:approve} → 200 RunResult.
   Error cases: unknown agent → 404 `not_found`; non-mesh agent → 400 `not_resumable`; bogus thread → 404
   `thread_not_found`; bad body → 400 `invalid_request`. Output-withhold on resume → 200 `withheld`.
+  *(Note: the resume withhold path reuses the same `_check_output` plumbing as `/run` and is covered by
+  `test_run_output_withheld_200`; it is not separately exercised because the `_gate_mesh_project` fixture's
+  `deploy` worker returns a fixed `result='shipped'` that never trips the output gate — contorting the
+  fixture for a redundant path would obscure intent more than it validates.)*
 - **Governance on resume**: a resume writes an audit record (inherited path).
 - **Base-install / `[api]`-without-`[mesh]`**: `import lottie.serve.rest_app` works without langgraph
   (no top-level mesh import); `build_http_app` builds; the resume route 500s/400s cleanly if invoked on a
