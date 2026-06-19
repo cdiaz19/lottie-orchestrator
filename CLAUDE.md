@@ -101,7 +101,8 @@ lottie inspect skill <name>            # schema, SKILL.md presence
 lottie run <agent>                     # run an agent
 lottie run <agent> --provider openai   # override provider for this run
 lottie serve                           # start the MCP stdio server (one tool per agent)
-# --port / HTTP, OpenAI-compat, and REST transports land in later Phase-4 slices
+lottie serve --port 8000               # HTTP API: OpenAI-compat (/v1/chat/completions, /v1/models)
+                                       #   + Lottie REST (/v1/agents, /v1/agents/{name}/run) — needs [api]
 
 # Knowledge
 lottie knowledge ingest ./docs         # ingest docs into knowledge layer
