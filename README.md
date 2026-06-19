@@ -83,7 +83,7 @@ lottie serve --port 8000
 ```
 
 - **OpenAI-compatible** — `POST /v1/chat/completions` + `GET /v1/models`. Point any OpenAI client's base URL here; an agent opts in by declaring a `chat: {input_field, output_field}` block in its `config.yaml`.
-- **Lottie REST** — `GET /v1/agents`, `GET /v1/agents/{name}` (Input JSON schema), `POST /v1/agents/{name}/run` (the agent's typed Input → the full `RunResult`). Every agent is reachable, no opt-in.
+- **Lottie REST** — `GET /v1/agents`, `GET /v1/agents/{name}` (Input JSON schema), `POST /v1/agents/{name}/run` (the agent's typed Input → the full `RunResult`). Every agent is reachable, no opt-in. A mesh that hits a human-in-the-loop gate returns `status:"interrupted"` + a `thread_id`; resume it with `POST /v1/agents/{name}/resume` (`{thread_id, decision}`) — **durable across restarts/workers** when served (the engine checkpoints to sqlite; `LOTTIE_MESH_CHECKPOINT=sqlite` is set by `serve --port`).
 
 Non-streaming for now; a dead/over-budget run fails closed (governance is inherited from the run chokepoint).
 
@@ -107,7 +107,7 @@ Non-streaming for now; a dead/over-budget run fails closed (governance is inheri
 | `v0.3.0` | 2 — Agent Mesh | Supervisor→worker mesh, conditional routing, typed state (parallel/HITL/time-travel → Phase 3) | ✅ |
 | `v0.4.0` | 3 — Mesh Hardening | LangGraph backend, parallel fork/join, human-in-the-loop, time-travel (opt-in `[mesh]` extra) | ✅ |
 | _later_ | Governance | immutable audit trail (`lottie audit`) + capability policy engine (allow/deny/escalate) + per-agent cost budgets (fail-closed circuit-breaker) + OpenTelemetry tracing (opt-in `[otel]`, fail-open, no-op default) | ✅ audit + policy + cost + otel |
-| `v0.5.0` | 4 — Integration | MCP stdio + HTTP API (OpenAI-compat `/v1/chat/completions`, Lottie REST `/v1/agents`); resume-over-REST + streaming next | ✅ MCP + OpenAI-compat + REST |
+| `v0.5.0` | 4 — Integration | MCP stdio + HTTP API (OpenAI-compat `/v1/chat/completions`, Lottie REST `/v1/agents`, durable mesh resume `/v1/agents/{name}/resume`); streaming next | ✅ MCP + OpenAI-compat + REST + resume |
 | `v1.0.0` | 5 — Public SDK | docs site, plugin system, demos | ◻ |
 
 It's verified in the open — see the [lottie-lab](https://github.com/cdiaz19/lottie-lab) round-by-round test harness.
