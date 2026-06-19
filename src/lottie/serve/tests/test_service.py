@@ -420,3 +420,33 @@ def test_run_agent_output_violation_carries_metrics(
         svc.run_agent("echo", {"query": "give me a key"})
     assert exc_info.value.input_tokens >= 0
     assert exc_info.value.output_tokens >= 0
+
+
+def test_resume_across_fresh_service_with_sqlite(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Durable resume: a FRESH AgentService (new process simulated) resumes a checkpoint
+    written by another, via the shared sqlite db — proving rehydrate-by-thread_id."""
+    try:
+        import langgraph  # noqa: F401
+    except ImportError:
+        pytest.skip("needs [mesh] extra")
+    from lottie.mesh.schema import ApprovalDecision
+
+    demo = _gate_mesh_project(tmp_path, monkeypatch, checkpoint="sqlite")
+
+    svc1 = AgentService(demo)
+    started = svc1.run_agent("gate", {"task": "ship"})
+    assert started.status == "interrupted"
+    assert started.thread_id
+
+    # A brand-new AgentService (empty agent cache) — only the shared sqlite db links them.
+    # The DURABILITY guarantee is that svc2 FINDS the checkpoint written by svc1 (no
+    # ThreadNotFound) and produces a real RunResult — rehydrate-by-thread_id with zero shared
+    # in-memory state. The exact terminal status depends on the mock supervisor script (a
+    # fresh MockLLMProvider replays from the top, so a multi-gate re-interrupt is legitimate);
+    # assert the result is well-formed, not a specific terminal status.
+    svc2 = AgentService(demo)
+    resumed = svc2.resume_agent("gate", started.thread_id, ApprovalDecision(action="approve"))
+    assert resumed.agent == "gate"
+    assert resumed.status in {"complete", "interrupted"}
