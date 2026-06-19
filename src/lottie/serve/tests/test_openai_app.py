@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -105,17 +106,85 @@ def test_non_chat_agent_404(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     assert resp.json()["error"]["code"] == "model_not_found"
 
 
-def test_stream_true_400(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _sse_events(text: str) -> list[Any]:
+    """Parse an SSE body into decoded JSON chunk dicts (and the literal '[DONE]'). Returns
+    list[Any] — the chunks are arbitrary decoded JSON, like the `resp.json()` used elsewhere in
+    this suite (so `chunk["choices"][0]...` type-checks under mypy --strict)."""
+    import json
+
+    events: list[Any] = []
+    for block in text.strip().split("\n\n"):
+        line = block.strip()
+        if not line.startswith("data: "):
+            continue
+        payload = line[len("data: "):]
+        events.append("[DONE]" if payload == "[DONE]" else json.loads(payload))
+    return events
+
+
+def test_stream_happy_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from lottie.serve.openai_app import build_openai_app
+
+    demo = _chat_project(tmp_path, monkeypatch)
+    _mock_provider(monkeypatch)  # returns "hello world"
+    client = TestClient(build_openai_app(demo))
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "echo", "messages": [{"role": "user", "content": "hi"}], "stream": True},
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/event-stream")
+    events = _sse_events(resp.text)
+    assert events[-1] == "[DONE]"
+    chunks = [e for e in events if e != "[DONE]"]
+    assert all(c["object"] == "chat.completion.chunk" for c in chunks)
+    assert chunks[0]["choices"][0]["delta"] == {"role": "assistant"}
+    assert any(c["choices"][0]["delta"].get("content") == "hello world" for c in chunks)
+    assert chunks[-1]["choices"][0]["finish_reason"] == "stop"
+
+
+def test_stream_output_withheld(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from lottie.serve.openai_app import build_openai_app
+
+    demo = _chat_project(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "lottie.serve.service.build_provider",
+        lambda name: __import__("lottie.llm", fromlist=["MockLLMProvider"]).MockLLMProvider(
+            ["your key AKIA" + "1234567890ABCDEF"]
+        ),
+    )
+    client = TestClient(build_openai_app(demo))
+    resp = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "echo",
+            "messages": [{"role": "user", "content": "give me a key"}],
+            "stream": True,
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/event-stream")
+    assert "AKIA" not in resp.text  # withheld content never streams
+    chunks = [e for e in _sse_events(resp.text) if e != "[DONE]"]
+    assert chunks[-1]["choices"][0]["finish_reason"] == "content_filter"
+    assert not any(c["choices"][0]["delta"].get("content") for c in chunks)  # no content delta
+
+
+def test_stream_unknown_model_stays_json_404(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from lottie.serve.openai_app import build_openai_app
 
     demo = _chat_project(tmp_path, monkeypatch)
     client = TestClient(build_openai_app(demo))
     resp = client.post(
         "/v1/chat/completions",
-        json={"model": "echo", "messages": [{"role": "user", "content": "hi"}], "stream": True},
+        json={"model": "nope", "messages": [{"role": "user", "content": "hi"}], "stream": True},
     )
-    assert resp.status_code == 400
-    assert resp.json()["error"]["type"] == "invalid_request_error"
+    # pre-stream error: a normal JSON 404, NOT a 200 SSE
+    assert resp.status_code == 404
+    assert resp.headers["content-type"].startswith("application/json")
+    assert resp.json()["error"]["code"] == "model_not_found"
 
 
 def test_no_user_message_400(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
