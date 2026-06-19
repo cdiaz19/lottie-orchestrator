@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import typer
 
 from lottie.project.config import find_project_root
@@ -42,4 +44,8 @@ def serve(
             "lottie serve --port needs the HTTP API deps. "
             "Install: pip install lottie-orchestrator[api]"
         ) from exc
+    # Served meshes persist their checkpoints so an interrupt can be resumed across
+    # restarts/workers. setdefault so an operator can override to "memory". Process-global
+    # mutation — acceptable for a server process; set once at startup before any agent runs.
+    os.environ.setdefault("LOTTIE_MESH_CHECKPOINT", "sqlite")
     uvicorn.run(build_http_app(root), host=host, port=port)

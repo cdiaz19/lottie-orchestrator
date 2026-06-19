@@ -13,3 +13,7 @@ class CapabilityViolation(MeshError):
 
 class MeshStepLimitExceeded(MeshError):
     """The routing loop hit `max_steps` without reaching FINISH."""
+
+
+class ThreadNotFoundError(MeshError):
+    """No checkpoint exists for the given thread_id (never existed, or pruned)."""

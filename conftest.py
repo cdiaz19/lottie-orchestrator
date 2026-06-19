@@ -47,3 +47,19 @@ def _isolate_unit_import_state() -> object:
         if m in {"agents", "skills"} or m.startswith(("agents.", "skills."))
     ]:
         del sys.modules[name]
+
+
+@pytest.fixture(autouse=True)
+def _isolate_mesh_checkpoint() -> object:
+    """`lottie serve --port` setdefaults LOTTIE_MESH_CHECKPOINT=sqlite in production code,
+    which monkeypatch can't revert. Snapshot + restore it so a serve-invoking test can't
+    flip later hermetic mesh tests onto the sqlite checkpointer (which would write/accumulate
+    .lottie/mesh/checkpoints.db and cross-contaminate runs)."""
+    import os
+
+    before = os.environ.get("LOTTIE_MESH_CHECKPOINT")
+    yield
+    if before is None:
+        os.environ.pop("LOTTIE_MESH_CHECKPOINT", None)
+    else:
+        os.environ["LOTTIE_MESH_CHECKPOINT"] = before

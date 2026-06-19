@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -9,7 +10,7 @@ from uuid import uuid4
 
 from lottie.mesh.checkpoint import build_checkpointer
 from lottie.mesh.engine import MeshEngine, MeshNode, RouteFn
-from lottie.mesh.errors import MeshError
+from lottie.mesh.errors import MeshError, ThreadNotFoundError
 from lottie.mesh.schema import (
     FINISH,
     ApprovalDecision,
@@ -28,19 +29,26 @@ except ImportError:
     _HAS_LANGGRAPH = False
 
 
+def _resolve_checkpoint(arg: str | None) -> str:
+    """Checkpoint backend precedence: explicit arg > LOTTIE_MESH_CHECKPOINT env > 'memory'."""
+    if arg is not None:
+        return arg
+    return os.getenv("LOTTIE_MESH_CHECKPOINT", "memory")
+
+
 class LangGraphEngine(MeshEngine):
     """Runs the supervisor→worker mesh on a compiled LangGraph StateGraph."""
 
     def __init__(
         self,
         *,
-        checkpoint: str = "memory",
+        checkpoint: str | None = None,
         root: Path | None = None,
         interrupt_before: list[str] | None = None,
     ) -> None:
         if not _HAS_LANGGRAPH:
             raise MeshError("LangGraphEngine requires: pip install lottie-orchestrator[mesh]")
-        self._checkpoint = checkpoint
+        self._checkpoint = _resolve_checkpoint(checkpoint)
         self._root = root
         self._interrupt_before = list(interrupt_before or [])
         self._saver: Any = None
@@ -157,10 +165,15 @@ class LangGraphEngine(MeshEngine):
     ) -> MeshRunResult:
         graph = self._build(nodes, route)
         config: dict[str, Any] = {"configurable": {"thread_id": thread_id}}
+        # A bogus/expired thread has no persisted state; get_state returns an empty snapshot.
+        # Detect it here so neither langgraph's EmptyInputError (approve) nor our MeshState
+        # validation error (reject) leaks — wrap as the typed ThreadNotFoundError (FG-1).
+        snap = graph.get_state(config)
+        if not snap.values.get("task"):
+            raise ThreadNotFoundError(f"no checkpoint for thread {thread_id!r}")
         if decision.action == "reject":
             # Record the rejection AS IF the worker ran (as_node), so resuming
             # advances past the interrupt WITHOUT executing the real worker.
-            snap = graph.get_state(config)
             worker = snap.next[0] if snap.next else "unknown"
             base = len(MeshState.model_validate(snap.values).history)
             graph.update_state(

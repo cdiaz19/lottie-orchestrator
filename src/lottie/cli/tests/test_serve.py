@@ -86,3 +86,26 @@ def test_serve_no_port_uses_stdio(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     runner.invoke(app, ["serve"])
     assert called["stdio"] is True
+
+
+def test_serve_port_sets_mesh_checkpoint_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`lottie serve --port` opts served meshes into durable sqlite checkpoints."""
+    pytest.importorskip("starlette")
+    from lottie.cli import app
+
+    monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["init", "demo"])
+    demo = tmp_path / "demo"
+    monkeypatch.chdir(demo)
+    monkeypatch.delenv("LOTTIE_MESH_CHECKPOINT", raising=False)
+
+    seen: dict[str, str | None] = {}
+
+    def fake_run(application: object, **kwargs: object) -> None:
+        seen["checkpoint"] = __import__("os").environ.get("LOTTIE_MESH_CHECKPOINT")
+
+    monkeypatch.setattr("uvicorn.run", fake_run)
+    assert runner.invoke(app, ["serve", "--port", "8125"]).exit_code == 0
+    assert seen["checkpoint"] == "sqlite"
