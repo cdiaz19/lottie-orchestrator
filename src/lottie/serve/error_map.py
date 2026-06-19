@@ -1,5 +1,5 @@
 """Map an error into an OpenAI-shaped JSONResponse. Kept separate from openai_app
-so it can be reused by a future generic-REST route on the same app."""
+so it is shared by both transports (the OpenAI routes and the REST routes)."""
 
 from __future__ import annotations
 
