@@ -110,3 +110,26 @@ def test_cost_defaults_to_zero_when_uncomputable(
     provider = LiteLLMProvider(model="local/llama")
     resp = provider.complete([Message(role="user", content="q")])
     assert resp.cost_usd == 0.0
+
+
+def test_stream_yields_content_deltas_skipping_empties(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def _chunk(text: Any) -> Any:
+        return SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=text))])
+
+    def fake_completion(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return iter([_chunk("The "), _chunk("launch "), _chunk(""), _chunk(None), _chunk("post")])
+
+    monkeypatch.setattr("lottie.llm.litellm_provider.litellm.completion", fake_completion)
+
+    provider = LiteLLMProvider(model="openai/gpt-4o")
+    deltas = list(provider.stream([Message(role="user", content="q")]))
+
+    assert deltas == ["The ", "launch ", "post"]  # empties + None skipped
+    assert captured["stream"] is True
+    assert captured["model"] == "openai/gpt-4o"
+    assert captured["messages"] == [{"role": "user", "content": "q"}]

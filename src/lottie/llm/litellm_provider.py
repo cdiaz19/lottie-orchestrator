@@ -7,7 +7,7 @@ skill code always goes through the `LLMProvider` abstraction (CLAUDE.md rule 1).
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 
 import litellm
 
@@ -41,6 +41,20 @@ class LiteLLMProvider(LLMProvider):
             model=self._model,
             cost_usd=self._cost(response),
         )
+
+    def stream(
+        self,
+        messages: list[Message],
+        model_params: Mapping[str, object] | None = None,
+    ) -> Iterator[str]:
+        params = dict(model_params or {})
+        payload = [{"role": m.role, "content": m.content} for m in messages]
+        for chunk in litellm.completion(
+            model=self._model, messages=payload, stream=True, **params
+        ):
+            delta = chunk.choices[0].delta.content
+            if delta:
+                yield delta
 
     @staticmethod
     def _cost(response: object) -> float:
