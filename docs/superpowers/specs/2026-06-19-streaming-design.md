@@ -102,6 +102,10 @@ chunk** (content is empty), finish chunk with `content_filter`, `[DONE]`. The wi
 placed in any chunk (parity with the non-stream 200 `content_filter`). Tokens spent are not reported (no
 `usage` in the stream this slice).
 
+**Empty-output edge:** a normal success whose agent output is the empty string emits role + finish(`stop`) +
+`[DONE]` with no content delta — distinguished from a withhold only by `finish_reason` (`stop` vs
+`content_filter`), which is the OpenAI-correct signal.
+
 ## 5. Builders — `openai_schema.py`
 
 A pure, Starlette-free helper (unit-testable):
