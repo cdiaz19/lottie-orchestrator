@@ -6,6 +6,7 @@ the [api] extra. The transport (openai_app) imports these and wraps them in HTTP
 
 from __future__ import annotations
 
+import json
 import time
 import uuid
 from typing import TypedDict
@@ -131,3 +132,30 @@ def error_dict(
     return ErrorDict(
         error=_ErrorBodyDict(message=message, type=type_, code=code, param=None)
     )
+
+
+def chat_completion_chunks(
+    *, agent: str, content: str, finish_reason: str
+) -> list[str]:
+    """OpenAI SSE lines for a completed chat response: a role delta, a content delta (only when
+    `content` is non-empty — a withheld output has none), the finish delta, then [DONE]. Each item
+    is a full `data: <json>\\n\\n` event; one shared id/created across the chunks."""
+    completion_id = f"chatcmpl-{uuid.uuid4().hex}"
+    created = int(time.time())
+
+    def _event(delta: dict[str, object], finish: str | None) -> str:
+        body: dict[str, object] = {
+            "id": completion_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": agent,
+            "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
+        }
+        return f"data: {json.dumps(body)}\n\n"
+
+    lines = [_event({"role": "assistant"}, None)]
+    if content:
+        lines.append(_event({"content": content}, None))
+    lines.append(_event({}, finish_reason))
+    lines.append("data: [DONE]\n\n")
+    return lines

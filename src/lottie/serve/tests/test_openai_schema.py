@@ -88,3 +88,40 @@ def test_error_dict_shape() -> None:
             "param": None,
         }
     }
+
+
+def test_chat_completion_chunks_success() -> None:
+    import json
+
+    from lottie.serve.openai_schema import chat_completion_chunks
+
+    lines = chat_completion_chunks(agent="echo", content="hi there", finish_reason="stop")
+    assert len(lines) == 4  # role, content, finish, [DONE]
+    assert all(line.startswith("data: ") and line.endswith("\n\n") for line in lines)
+    assert lines[-1] == "data: [DONE]\n\n"
+
+    role = json.loads(lines[0][len("data: "):])
+    body = json.loads(lines[1][len("data: "):])
+    finish = json.loads(lines[2][len("data: "):])
+    assert role["object"] == "chat.completion.chunk"
+    assert role["model"] == "echo"
+    assert role["choices"][0]["delta"] == {"role": "assistant"}
+    assert role["choices"][0]["finish_reason"] is None
+    assert body["choices"][0]["delta"] == {"content": "hi there"}
+    assert finish["choices"][0]["delta"] == {}
+    assert finish["choices"][0]["finish_reason"] == "stop"
+    assert role["id"] == body["id"] == finish["id"]  # one id across chunks
+    assert role["id"].startswith("chatcmpl-")
+
+
+def test_chat_completion_chunks_withhold_omits_content() -> None:
+    import json
+
+    from lottie.serve.openai_schema import chat_completion_chunks
+
+    lines = chat_completion_chunks(agent="echo", content="", finish_reason="content_filter")
+    assert len(lines) == 3  # role, finish, [DONE] — NO content chunk when content is empty
+    assert lines[-1] == "data: [DONE]\n\n"
+    finish = json.loads(lines[1][len("data: "):])
+    assert finish["choices"][0]["finish_reason"] == "content_filter"
+    assert finish["choices"][0]["delta"] == {}
