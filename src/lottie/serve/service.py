@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Iterator, Mapping
 from pathlib import Path
 from typing import Protocol
 
@@ -138,7 +138,20 @@ class AgentService:
             data = input_model.model_validate(payload)
         except ValidationError as exc:
             raise InvalidInputError(f"invalid input for '{name}': {exc}") from exc
-        return self._stream_gate.scan_stream(agent.run_stream(data))
+        return self._gated_stream(agent.run_stream(data))
+
+    def _gated_stream(self, run_gen: Generator[str, None, None]) -> Iterator[str]:
+        """Secret-gate run_stream's deltas, CLOSING run_stream on any exit.
+
+        `scan_stream` loops over its source with a plain `for`, so it does NOT close `run_gen`
+        when it raises (secret) or the consumer stops early — that would orphan run_stream and
+        defer its audit + `_audit_depth` reset to GC (in the wrong context). The `finally` here
+        closes it deterministically, in the caller's pinned context, so the reset always pairs.
+        """
+        try:
+            yield from self._stream_gate.scan_stream(run_gen)
+        finally:
+            run_gen.close()
 
     def resume_agent(
         self,

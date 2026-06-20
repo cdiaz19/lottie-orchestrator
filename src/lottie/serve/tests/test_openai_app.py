@@ -377,3 +377,106 @@ def test_stream_run_writes_root_audit_record(
     assert len(records) == 1
     assert records[0].root is True
     assert records[0].status == "ok"
+
+
+# ---------------------------------------------------------------------------
+# Real-token SSE path (opt-in agents that override _stream)
+# ---------------------------------------------------------------------------
+
+_STREAM_METHOD = '''
+    def _stream(self, data: EchoAgentInput) -> Iterator[str]:
+        yield from self.stream_complete(
+            [
+                Message(role="system", content=SYSTEM_PROMPT),
+                Message(role="user", content=data.query),
+            ]
+        )
+'''
+
+
+def _make_echo_streamable(demo: Path) -> None:
+    """Append a `_stream` override to the generated echo agent (mirrors its `_execute`)."""
+    agent_py = demo / "agents" / "echo" / "agent.py"
+    src = agent_py.read_text(encoding="utf-8")
+    src = src.replace(
+        "from __future__ import annotations",
+        "from __future__ import annotations\nfrom collections.abc import Iterator",
+    )
+    agent_py.write_text(src + _STREAM_METHOD, encoding="utf-8")
+
+
+def _streaming_chat_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, response: str
+) -> Path:
+    demo = _chat_project(tmp_path, monkeypatch)   # echo + chat block
+    _make_echo_streamable(demo)                   # + _stream override -> real streaming
+    _mock_provider(monkeypatch, response)
+    return demo
+
+
+def test_real_stream_emits_multiple_content_chunks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lottie.serve.openai_app import build_openai_app
+
+    demo = _streaming_chat_project(tmp_path, monkeypatch, "alpha\nbeta\ngamma\n")
+    client = TestClient(build_openai_app(demo))
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "echo", "messages": [{"role": "user", "content": "hi"}], "stream": True},
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/event-stream")
+    events = _sse_events(resp.text)
+    assert events[-1] == "[DONE]"
+    chunks = [e for e in events if e != "[DONE]"]
+    assert chunks[0]["choices"][0]["delta"] == {"role": "assistant"}
+    contents = [c["choices"][0]["delta"].get("content") for c in chunks]
+    contents = [c for c in contents if c]
+    assert len(contents) > 1  # REAL chunking (not one format-level blob)
+    assert "".join(contents) == "alpha\nbeta\ngamma\n"
+    assert chunks[-1]["choices"][0]["finish_reason"] == "stop"
+
+
+def test_real_stream_secret_ends_content_filter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lottie.serve.openai_app import build_openai_app
+
+    demo = _streaming_chat_project(
+        tmp_path, monkeypatch, "safe line\nhere is AKIA" + "1234567890ABCDEF" + "\n"
+    )
+    client = TestClient(build_openai_app(demo))
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "echo", "messages": [{"role": "user", "content": "hi"}], "stream": True},
+    )
+    assert resp.status_code == 200
+    assert "AKIA" not in resp.text                            # secret never streams
+    chunks = [e for e in _sse_events(resp.text) if e != "[DONE]"]
+    assert chunks[-1]["choices"][0]["finish_reason"] == "content_filter"
+    contents = [
+        c["choices"][0]["delta"].get("content")
+        for c in chunks
+        if c["choices"][0]["delta"].get("content")
+    ]
+    assert "".join(contents) == "safe line\n"  # clean line delivered; secret never streams
+
+
+def test_real_stream_audits_root_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lottie.governance.audit import SqliteAuditLogger
+    from lottie.serve.openai_app import build_openai_app
+
+    demo = _streaming_chat_project(tmp_path, monkeypatch, "alpha\nbeta\n")
+    monkeypatch.delenv("LOTTIE_DISABLE_AUDIT", raising=False)
+    client = TestClient(build_openai_app(demo))
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "echo", "messages": [{"role": "user", "content": "hi"}], "stream": True},
+    )
+    assert resp.status_code == 200
+    list(_sse_events(resp.text))                              # drain
+    records = SqliteAuditLogger(demo).query(agent="EchoAgent")
+    assert len(records) == 1 and records[0].root is True and records[0].status == "ok"
