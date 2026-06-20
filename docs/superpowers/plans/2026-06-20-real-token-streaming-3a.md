@@ -29,14 +29,18 @@ usage-bearing `LLMProvider.stream_complete` primitive. Core + `llm` layers only;
 - Tests: `llm/tests/test_llm_base.py`, `test_mock_provider.py`, `test_litellm_provider.py` (extend);
   `core/tests/test_runnable_stream.py`, `core/tests/test_base_agent_stream.py` (new).
 
-**Test helper (used in Tasks 1, 5):** drain a generator capturing its return value:
+**Test helper (used in Tasks 1, 2, 3):** drain a generator capturing its return value. Typed so
+`mypy --strict src` (which checks test files too) stays clean — `gen: object` would error on `next(gen)`:
 
 ```python
-def _drain(gen: object) -> tuple[list[str], object]:
+from collections.abc import Generator
+
+
+def _drain(gen: Generator[str, None, object]) -> tuple[list[str], object]:
     out: list[str] = []
     try:
         while True:
-            out.append(next(gen))  # type: ignore[arg-type]
+            out.append(next(gen))
     except StopIteration as stop:
         return out, stop.value
 ```
