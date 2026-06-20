@@ -115,7 +115,7 @@ def test_run_stream_early_close_audits_partial(tmp_path: Path) -> None:
     agent = _StreamingAgent(MockLLMProvider(["alpha beta gamma"]), audit=SqliteAuditLogger(tmp_path))  # noqa: E501
     gen = agent.run_stream(_In(q="hi"))
     assert next(gen)  # pull the first delta
-    gen.close()  # type: ignore[attr-defined]  # concrete object is a generator
+    gen.close()
     rows = SqliteAuditLogger(tmp_path).query()
     assert rows[0].status == "error" and rows[0].error == "stream closed before completion"
 

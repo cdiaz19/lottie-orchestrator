@@ -10,7 +10,7 @@ from __future__ import annotations
 import contextvars
 import warnings
 from abc import abstractmethod
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Iterator, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import ClassVar, Literal
@@ -112,13 +112,13 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
             finally:
                 _audit_depth.reset(token)
 
-    def run_stream(self, data: InputT) -> Iterator[str]:
+    def run_stream(self, data: InputT) -> Generator[str, None, None]:
         """Streaming analog of run(): same policy/cost pre-gates, instrumented stream, audit post.
 
-        A generator — the pre-gates run on the first `next()`, before any delta, so a
-        deny/over-budget raises before the first piece. The output security gate is NOT
-        here; it wraps the deltas at the serve boundary (slice 3b), exactly like the
-        non-streaming output gate.
+        Returned as `Generator` so the 3b transport can `.close()` it to cancel. The pre-gates run
+        on the first `next()`, before any delta, so a deny/over-budget raises before the first
+        piece; nothing runs if the generator is never iterated. The output security gate is NOT
+        here — it wraps the deltas at the serve boundary (slice 3b), like the non-streaming gate.
         """
         self._pre_run_gates(data)
         token = _audit_depth.set(_depth() + 1)
