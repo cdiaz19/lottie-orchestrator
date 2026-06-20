@@ -10,7 +10,7 @@ from __future__ import annotations
 import contextvars
 import warnings
 from abc import abstractmethod
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import ClassVar, Literal
@@ -24,7 +24,13 @@ from lottie.governance.cost import BudgetExceeded, CostGate, NullCostGate
 from lottie.governance.policy import NullPolicyGate, PolicyEscalation, PolicyGate, PolicyViolation
 from lottie.governance.schema import AuditRecord
 from lottie.llm import LLMProvider, LLMResponse, Message
+from lottie.llm.base import StreamResult
 from lottie.memory.base import MemoryClient, NullMemoryClient
+
+
+class NotStreamable(RuntimeError):
+    """Raised if `_stream` is called on an agent that did not opt in."""
+
 
 # Run depth → the `root` flag (depth 1 = top-level). A ContextVar (not threading.local)
 # so the depth propagates into LangGraph parallel worker threads (langgraph copies the
@@ -159,6 +165,25 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         if self._active_ctx is not None:
             self._active_ctx.add_usage(response.usage, response.cost_usd)
         return response
+
+    def _stream(self, data: InputT) -> Iterator[str]:
+        """Opt-in streaming producer. Default raises; override to enable real token streaming."""
+        raise NotStreamable(f"{self.name} does not implement _stream")
+
+    @classmethod
+    def supports_streaming(cls) -> bool:
+        """True if this agent overrides `_stream` (real-stream vs format-fallback in transport)."""
+        return cls._stream is not BaseAgent._stream
+
+    def stream_complete(
+        self,
+        messages: list[Message],
+        model_params: Mapping[str, object] | None = None,
+    ) -> Iterator[str]:
+        """Stream deltas, accumulating usage into the active run at stream end."""
+        result: StreamResult = yield from self.llm.stream_complete(messages, model_params)
+        if self._active_ctx is not None:
+            self._active_ctx.add_usage(result.usage, result.cost_usd)
 
     @abstractmethod
     def _execute(self, data: InputT) -> OutputT: ...
