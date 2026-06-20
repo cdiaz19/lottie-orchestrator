@@ -4,6 +4,16 @@ import pytest
 from pydantic import ValidationError
 
 from lottie.llm import LLMProvider, LLMResponse, Message, TokenUsage
+from lottie.llm.base import StreamResult
+
+
+def _drain(gen: object) -> tuple[list[str], object]:
+    out: list[str] = []
+    try:
+        while True:
+            out.append(next(gen))  # type: ignore[arg-type]
+    except StopIteration as stop:
+        return out, stop.value
 
 
 def test_token_usage_defaults_to_zero() -> None:
@@ -80,3 +90,27 @@ def test_stream_default_yields_complete_content_once() -> None:
 
     deltas = list(OneShot().stream([Message(role="user", content="hi")]))
     assert deltas == ["hello world"]  # default = one delta over complete()
+
+
+class _CompleteOnly(LLMProvider):
+    @property
+    def model(self) -> str:
+        return "stub/model"
+
+    def complete(
+        self,
+        messages: list[Message],
+        model_params: Mapping[str, object] | None = None,
+    ) -> LLMResponse:
+        return LLMResponse(
+            content="hello world", usage=TokenUsage(input_tokens=4, output_tokens=2),
+            model="stub/model", cost_usd=0.3,
+        )
+
+
+def test_stream_complete_default_one_shot_yields_content_and_returns_usage() -> None:
+    deltas, result = _drain(_CompleteOnly().stream_complete([Message(role="user", content="x")]))
+    assert deltas == ["hello world"]            # one delta (no incremental latency)
+    assert isinstance(result, StreamResult)
+    assert result.usage.input_tokens == 4 and result.usage.output_tokens == 2
+    assert result.cost_usd == 0.3
