@@ -7,11 +7,11 @@ skill code always goes through the `LLMProvider` abstraction (CLAUDE.md rule 1).
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Iterator, Mapping
 
 import litellm
 
-from lottie.llm.base import LLMProvider, LLMResponse, Message, TokenUsage
+from lottie.llm.base import LLMProvider, LLMResponse, Message, StreamResult, TokenUsage
 
 
 class LiteLLMProvider(LLMProvider):
@@ -58,6 +58,35 @@ class LiteLLMProvider(LLMProvider):
             delta = chunk.choices[0].delta.content
             if delta:
                 yield delta
+
+    def stream_complete(
+        self,
+        messages: list[Message],
+        model_params: Mapping[str, object] | None = None,
+    ) -> Generator[str, None, StreamResult]:
+        params = dict(model_params or {})
+        params.pop("stream", None)          # streaming path owns these flags
+        params.pop("stream_options", None)
+        payload = [{"role": m.role, "content": m.content} for m in messages]
+        usage = TokenUsage()
+        cost = 0.0
+        for chunk in litellm.completion(
+            model=self._model, messages=payload, stream=True,
+            stream_options={"include_usage": True}, **params,
+        ):
+            chunk_usage = getattr(chunk, "usage", None)     # usage rides a final, choice-less chunk
+            if chunk_usage is not None:
+                usage = TokenUsage(
+                    input_tokens=chunk_usage.prompt_tokens or 0,
+                    output_tokens=chunk_usage.completion_tokens or 0,
+                )
+                cost = self._cost(chunk) or cost            # same cost path as complete()
+            if not chunk.choices:                           # usage-only chunk -> no delta
+                continue
+            delta = chunk.choices[0].delta.content
+            if delta:
+                yield delta
+        return StreamResult(usage=usage, cost_usd=cost)
 
     @staticmethod
     def _cost(response: object) -> float:
