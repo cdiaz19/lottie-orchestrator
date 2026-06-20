@@ -80,8 +80,11 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
     def provider(self) -> str | None:
         return self.llm.model
 
-    def run(self, data: InputT) -> OutputT:
-        """Policy + budget pre-checks, then instrumented run + audit (best-effort)."""
+    def _pre_run_gates(self, data: InputT) -> None:
+        """Policy then budget pre-checks; audit a block and re-raise if either trips.
+
+        Shared by run and run_stream.
+        """
         try:
             self._policy.check()   # capability policy — checked FIRST (no I/O)
             self._cost.check()     # cumulative budget — checked SECOND (reads the ledger)
@@ -93,6 +96,10 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         except BudgetExceeded as exc:
             self._write_block(data, exc, "budget_exceeded")
             raise
+
+    def run(self, data: InputT) -> OutputT:
+        """Policy + budget pre-checks, then instrumented run + audit (best-effort)."""
+        self._pre_run_gates(data)
         token = _audit_depth.set(_depth() + 1)
         is_root = _depth() == 1
         output: OutputT | None = None
@@ -102,6 +109,26 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         finally:
             try:
                 self._write_audit(data, output, is_root)
+            finally:
+                _audit_depth.reset(token)
+
+    def run_stream(self, data: InputT) -> Iterator[str]:
+        """Streaming analog of run(): same policy/cost pre-gates, instrumented stream, audit post.
+
+        A generator — the pre-gates run on the first `next()`, before any delta, so a
+        deny/over-budget raises before the first piece. The output security gate is NOT
+        here; it wraps the deltas at the serve boundary (slice 3b), exactly like the
+        non-streaming output gate.
+        """
+        self._pre_run_gates(data)
+        token = _audit_depth.set(_depth() + 1)
+        is_root = _depth() == 1
+        try:
+            yield from self._instrument_stream(self._stream(data))
+        finally:
+            try:
+                # output=None: a stream has no single typed Output
+                self._write_audit(data, None, is_root)
             finally:
                 _audit_depth.reset(token)
 
