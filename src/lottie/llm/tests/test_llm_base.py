@@ -1,4 +1,4 @@
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping
 
 import pytest
 from pydantic import ValidationError
@@ -7,11 +7,11 @@ from lottie.llm import LLMProvider, LLMResponse, Message, TokenUsage
 from lottie.llm.base import StreamResult
 
 
-def _drain(gen: object) -> tuple[list[str], object]:
+def _drain(gen: Generator[str, None, object]) -> tuple[list[str], object]:
     out: list[str] = []
     try:
         while True:
-            out.append(next(gen))  # type: ignore[arg-type]
+            out.append(next(gen))
     except StopIteration as stop:
         return out, stop.value
 

@@ -1,4 +1,4 @@
-from lottie.llm.base import LLMProvider, LLMResponse, Message, Role, TokenUsage
+from lottie.llm.base import LLMProvider, LLMResponse, Message, Role, StreamResult, TokenUsage
 from lottie.llm.litellm_provider import LiteLLMProvider
 from lottie.llm.mock import MockLLMProvider
 
@@ -19,6 +19,7 @@ __all__ = [
     "Message",
     "MockLLMProvider",
     "Role",
+    "StreamResult",
     "TokenUsage",
     "build_provider",
 ]
