@@ -42,3 +42,21 @@ def test_flush_emits_final_partial_clean_line() -> None:
     # no trailing newline -> the last line is emitted at flush
     result = "".join(gate.scan_stream(["a clean tail with no newline"]))
     assert result == "a clean tail with no newline"
+
+
+def test_overflow_emits_with_overlap_and_reconstructs() -> None:
+    gate = StreamingSecretGate()
+    big = "x" * 9000  # > MAX_LINE (8192), no newline, all identifier chars
+    out = list(gate.scan_stream([big]))
+    assert len(out) >= 2                  # head emitted on overflow, tail at flush
+    assert "".join(out) == big            # byte-for-byte reconstruction
+
+
+def test_secret_in_overflow_buffer_raises_and_does_not_leak() -> None:
+    gate = StreamingSecretGate()
+    big = "x" * 9000 + _AKIA              # secret after a long no-newline run
+    out: list[str] = []
+    with pytest.raises(OutputSecurityViolation):
+        for piece in gate.scan_stream([big]):
+            out.append(piece)
+    assert _AKIA not in "".join(out)      # the secret never streamed
