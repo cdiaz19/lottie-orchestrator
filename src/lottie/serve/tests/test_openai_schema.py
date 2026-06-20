@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from lottie.serve.openai_schema import (
+    ChatChunkEncoder,
     ChatCompletionRequest,
     chat_completion_dict,
     error_dict,
@@ -125,3 +126,22 @@ def test_chat_completion_chunks_withhold_omits_content() -> None:
     finish = json.loads(lines[1][len("data: "):])
     assert finish["choices"][0]["finish_reason"] == "content_filter"
     assert finish["choices"][0]["delta"] == {}
+
+
+def test_chat_chunk_encoder_shares_id_and_shapes() -> None:
+    import json
+
+    enc = ChatChunkEncoder("echo")
+    role = json.loads(enc.role()[len("data: "):])
+    c1 = json.loads(enc.content("alpha\n")[len("data: "):])
+    c2 = json.loads(enc.content("beta\n")[len("data: "):])
+    fin = json.loads(enc.finish("stop")[len("data: "):])
+
+    ids = {role["id"], c1["id"], c2["id"], fin["id"]}
+    assert len(ids) == 1                                   # one shared id across the stream
+    assert role["object"] == "chat.completion.chunk" and role["model"] == "echo"
+    assert role["choices"][0]["delta"] == {"role": "assistant"}
+    assert c1["choices"][0]["delta"] == {"content": "alpha\n"}
+    assert c1["choices"][0]["finish_reason"] is None
+    assert fin["choices"][0]["delta"] == {} and fin["choices"][0]["finish_reason"] == "stop"
+    assert ChatChunkEncoder.done() == "data: [DONE]\n\n"
