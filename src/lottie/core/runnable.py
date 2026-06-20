@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from abc import ABC, abstractmethod
+from collections.abc import Generator, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
@@ -93,6 +94,36 @@ class InstrumentedRunnable[InputT: BaseModel, OutputT: BaseModel](ABC):
         )
         self.last_metrics = record
         append_metrics(record, self._benchmarks_root, self._enable_benchmarks)
+
+    def _instrument_stream(self, pieces: Iterator[str]) -> Generator[str, None, None]:
+        """run()'s instrumentation, streamed: time the run, record metrics post.
+
+        `pieces` is the producer (an agent's `_stream`); it accumulates usage into
+        `_active_ctx` as it runs. On early consumer close (`GeneratorExit`) the run is
+        recorded PARTIAL, not a clean success — `_record` only writes (never yields),
+        so it is safe during close (unlike a flushing generator).
+        """
+        ctx = RunContext()
+        self._active_ctx = ctx
+        start = perf_counter()
+        success = True
+        error: str | None = None
+        with run_span(self.name, self.kind) as span:
+            try:
+                yield from pieces
+            except GeneratorExit:  # BaseException, not Exception — handled explicitly, re-raised
+                success = False
+                error = "stream closed before completion"
+                raise
+            except Exception as exc:
+                success = False
+                error = repr(exc)
+                span_set_error(span, exc)
+                raise
+            finally:
+                self._record(ctx, start, success, error)
+                span_set_metrics(span, self.last_metrics)
+                self._active_ctx = None
 
     @abstractmethod
     def _execute(self, data: InputT) -> OutputT:

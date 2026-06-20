@@ -10,7 +10,7 @@ from __future__ import annotations
 import contextvars
 import warnings
 from abc import abstractmethod
-from collections.abc import Mapping
+from collections.abc import Generator, Iterator, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import ClassVar, Literal
@@ -24,7 +24,13 @@ from lottie.governance.cost import BudgetExceeded, CostGate, NullCostGate
 from lottie.governance.policy import NullPolicyGate, PolicyEscalation, PolicyGate, PolicyViolation
 from lottie.governance.schema import AuditRecord
 from lottie.llm import LLMProvider, LLMResponse, Message
+from lottie.llm.base import StreamResult
 from lottie.memory.base import MemoryClient, NullMemoryClient
+
+
+class NotStreamable(RuntimeError):
+    """Raised if `_stream` is called on an agent that did not opt in."""
+
 
 # Run depth → the `root` flag (depth 1 = top-level). A ContextVar (not threading.local)
 # so the depth propagates into LangGraph parallel worker threads (langgraph copies the
@@ -74,8 +80,11 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
     def provider(self) -> str | None:
         return self.llm.model
 
-    def run(self, data: InputT) -> OutputT:
-        """Policy + budget pre-checks, then instrumented run + audit (best-effort)."""
+    def _pre_run_gates(self, data: InputT) -> None:
+        """Policy then budget pre-checks; audit a block and re-raise if either trips.
+
+        Shared by run and run_stream.
+        """
         try:
             self._policy.check()   # capability policy — checked FIRST (no I/O)
             self._cost.check()     # cumulative budget — checked SECOND (reads the ledger)
@@ -87,6 +96,10 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         except BudgetExceeded as exc:
             self._write_block(data, exc, "budget_exceeded")
             raise
+
+    def run(self, data: InputT) -> OutputT:
+        """Policy + budget pre-checks, then instrumented run + audit (best-effort)."""
+        self._pre_run_gates(data)
         token = _audit_depth.set(_depth() + 1)
         is_root = _depth() == 1
         output: OutputT | None = None
@@ -96,6 +109,26 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         finally:
             try:
                 self._write_audit(data, output, is_root)
+            finally:
+                _audit_depth.reset(token)
+
+    def run_stream(self, data: InputT) -> Generator[str, None, None]:
+        """Streaming analog of run(): same policy/cost pre-gates, instrumented stream, audit post.
+
+        Returned as `Generator` so the 3b transport can `.close()` it to cancel. The pre-gates run
+        on the first `next()`, before any delta, so a deny/over-budget raises before the first
+        piece; nothing runs if the generator is never iterated. The output security gate is NOT
+        here — it wraps the deltas at the serve boundary (slice 3b), like the non-streaming gate.
+        """
+        self._pre_run_gates(data)
+        token = _audit_depth.set(_depth() + 1)
+        is_root = _depth() == 1
+        try:
+            yield from self._instrument_stream(self._stream(data))
+        finally:
+            try:
+                # output=None: a stream has no single typed Output
+                self._write_audit(data, None, is_root)
             finally:
                 _audit_depth.reset(token)
 
@@ -159,6 +192,25 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         if self._active_ctx is not None:
             self._active_ctx.add_usage(response.usage, response.cost_usd)
         return response
+
+    def _stream(self, data: InputT) -> Iterator[str]:
+        """Opt-in streaming producer. Default raises; override to enable real token streaming."""
+        raise NotStreamable(f"{self.name} does not implement _stream")
+
+    @classmethod
+    def supports_streaming(cls) -> bool:
+        """True if this agent overrides `_stream` (real-stream vs format-fallback in transport)."""
+        return cls._stream is not BaseAgent._stream
+
+    def stream_complete(
+        self,
+        messages: list[Message],
+        model_params: Mapping[str, object] | None = None,
+    ) -> Iterator[str]:
+        """Stream deltas, accumulating usage into the active run at stream end."""
+        result: StreamResult = yield from self.llm.stream_complete(messages, model_params)
+        if self._active_ctx is not None:
+            self._active_ctx.add_usage(result.usage, result.cost_usd)
 
     @abstractmethod
     def _execute(self, data: InputT) -> OutputT: ...

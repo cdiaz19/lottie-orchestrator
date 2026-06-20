@@ -8,9 +8,9 @@ Unit tests must never call a real provider (CLAUDE.md rule 5).
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Iterator, Mapping
 
-from lottie.llm.base import LLMProvider, LLMResponse, Message, TokenUsage
+from lottie.llm.base import LLMProvider, LLMResponse, Message, StreamResult, TokenUsage
 
 
 class MockLLMProvider(LLMProvider):
@@ -58,3 +58,16 @@ class MockLLMProvider(LLMProvider):
         Consumes the same queue as `complete` (eagerly, via `_pop_response`)."""
         content = self._pop_response(messages)
         return (piece for piece in re.findall(r"\S+\s*|\s+", content))
+
+    def stream_complete(
+        self,
+        messages: list[Message],
+        model_params: Mapping[str, object] | None = None,
+    ) -> Generator[str, None, StreamResult]:
+        """Replay the next canned response as deltas (queue shared with `complete`); zero usage.
+
+        MockLLM has no real usage; a usage-parity test uses a fixture provider
+        with non-zero usage instead."""
+        content = self._pop_response(messages)
+        yield from re.findall(r"\S+\s*|\s+", content)
+        return StreamResult()

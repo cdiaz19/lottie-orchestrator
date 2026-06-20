@@ -1,8 +1,18 @@
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping
 
 import pytest
 
 from lottie.llm import LLMProvider, LLMResponse, Message, MockLLMProvider
+from lottie.llm.base import StreamResult
+
+
+def _drain(gen: Generator[str, None, object]) -> tuple[list[str], object]:
+    out: list[str] = []
+    try:
+        while True:
+            out.append(next(gen))
+    except StopIteration as stop:
+        return out, stop.value
 
 
 def test_mock_is_a_concrete_llm_provider() -> None:
@@ -84,3 +94,22 @@ def test_mock_stream_raises_when_exhausted() -> None:
     list(p.stream([Message(role="user", content="a")]))
     with pytest.raises(RuntimeError):
         list(p.stream([Message(role="user", content="b")]))
+
+
+def test_mock_stream_complete_reconstructs_and_returns_zero_usage() -> None:
+    p = MockLLMProvider(["the launch post"])
+    deltas, result = _drain(p.stream_complete([Message(role="user", content="x")]))
+    assert "".join(deltas) == "the launch post" and len(deltas) > 1
+    assert isinstance(result, StreamResult)
+    assert result.usage.input_tokens == 0
+    assert result.usage.output_tokens == 0
+    assert result.cost_usd == 0.0
+
+
+def test_mock_stream_complete_shares_queue_with_complete() -> None:
+    p = MockLLMProvider(["first", "second"])
+    _drain(p.stream_complete([Message(role="user", content="a")]))     # consumes "first"
+    assert p.complete([Message(role="user", content="b")]).content == "second"
+    assert len(p.calls) == 2
+    with pytest.raises(RuntimeError):                                   # exhausted
+        _drain(p.stream_complete([Message(role="user", content="c")]))
