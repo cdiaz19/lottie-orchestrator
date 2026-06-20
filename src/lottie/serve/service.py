@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Protocol
 
@@ -26,6 +26,7 @@ from lottie.serve.errors import (
 )
 from lottie.serve.schema import AgentInfo, RunResult
 from lottie.serve.security import SecurityGate
+from lottie.serve.stream_gate import StreamingSecretGate
 
 
 class _ResumeDecision(Protocol):
@@ -58,6 +59,7 @@ class AgentService:
     def __init__(self, root: Path, *, gate: SecurityGate | None = None) -> None:
         self._root = root
         self._gate = gate or SecurityGate()
+        self._stream_gate = StreamingSecretGate()  # incremental secret gate for the streaming path
         # Cache constructed agents by (name, provider) so an interrupted mesh run
         # and its later resume_agent share the SAME engine instance — and thus the
         # same memoized in-memory checkpointer. Without this, resume_agent would
@@ -103,6 +105,40 @@ class AgentService:
 
         self._check_output(agent, output)
         return self._result(name, output, agent.last_metrics)
+
+    def stream_agent(
+        self,
+        name: str,
+        payload: Mapping[str, object],
+        *,
+        provider: str | None = None,
+    ) -> Iterator[str] | None:
+        """Real-token stream of an opt-in agent's output, secret-gated incrementally.
+
+        Returns None if the agent does not implement `_stream` — the transport then uses the
+        format-level fallback. Otherwise gates the input + validates EAGERLY (so those errors
+        raise here, before the SSE starts), and returns scan_stream(run_stream(data)) — a lazy
+        generator. NOTE the eager/lazy split: only the input gate + validation are eager; the
+        policy/cost PRE-gates and audit live inside run_stream and fire on the FIRST pull, so a
+        PolicyViolation/BudgetExceeded surfaces mid-stream (the transport maps it to an `error`
+        finish), not as a pre-stream status.
+        """
+        self._require_agent(name)
+        # _get_agent precedes check_input (unlike run_agent) because supports_streaming() needs the
+        # instance; the (name, provider) cache makes this a one-time cost per agent.
+        agent = self._get_agent(name, provider)
+        if not agent.supports_streaming():
+            return None  # not streamable -> caller falls back to format-level (no gating yet)
+        self._gate.check_input(json.dumps(payload))
+        try:
+            input_model = load_input_model(self._root, name)
+        except Exception as exc:  # noqa: BLE001 — keep CLI/import errors out of the core
+            raise AgentLoadError(f"cannot load agent '{name}': {exc}") from exc
+        try:
+            data = input_model.model_validate(payload)
+        except ValidationError as exc:
+            raise InvalidInputError(f"invalid input for '{name}': {exc}") from exc
+        return self._stream_gate.scan_stream(agent.run_stream(data))
 
     def resume_agent(
         self,
