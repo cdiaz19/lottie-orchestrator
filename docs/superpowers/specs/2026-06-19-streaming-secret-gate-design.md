@@ -66,11 +66,11 @@ Holds a `SecretDetectionSkill` (constructor-injectable for tests). `Iterable[str
                 buffer = buffer[nl + 1 :]
                 self._raise_if_secret(line)
                 yield line
-            if len(buffer) > _MAX_LINE:           # no-newline overflow -> bound memory, stream progress
-                head, buffer = _split_hold_overlap(buffer)   # hold the trailing identifier run (capped)
-                self._raise_if_secret(head)
-                yield head
-        # FLUSH the final partial line — AFTER the loop, NEVER in a finally (see §4).
+            if len(buffer) > _MAX_LINE:           # unterminated over-long line -> fail closed, no partial emit
+                raise OutputSecurityViolation(
+                    f"output withheld: unterminated line exceeds {_MAX_LINE} bytes"
+                )
+        # FLUSH the final (complete-at-end) line, scanned whole — AFTER the loop, NEVER in a finally (see §4).
         if buffer:
             self._raise_if_secret(buffer)
             yield buffer
@@ -80,16 +80,18 @@ Holds a `SecretDetectionSkill` (constructor-injectable for tests). `Iterable[str
             raise OutputSecurityViolation("output withheld: secret detected")  # fixed label, NO payload
 ```
 
+- **Emit ONLY complete lines** — a sub-line (partial-line) emit could split a line-scoped secret across two
+  clean-looking chunks (e.g. `"-----BEGIN RSA PRIVATE "` emits clean; `"KEY-----"` held → full header leaked).
+  The fix: no partial-line bytes ever leave the gate.
 - **Per-line scan** = the non-stream `check_output` scan (detect-secrets reports per line; custom regexes
   are per-line via `splitlines()`). A secret split across *deltas* but within one line is caught — the line
   is fully reassembled before scanning.
-- **`_split_hold_overlap(buffer)`** returns `(head, tail)` where `tail` is the **trailing maximal run of
-  identifier/entropy characters** (`[A-Za-z0-9+/=_\-]`), capped at `_OVERLAP_CAP` (so a partial
-  high-entropy token is never emitted; if the run exceeds the cap, hold the last `_OVERLAP_CAP` chars),
-  and `head = buffer[: len(buffer) - len(tail)]`. Emitting `head` and re-buffering `tail` means a bounded
-  regex (AKIA = 20, PRIVATE-KEY header ~40) can never straddle the cut — the overlap covers it.
-- Constants: `_MAX_LINE = 8192`, `_OVERLAP_CAP = 128` (> the longest bounded pattern; module-level
-  named constants, commented).
+- **No-newline lines** buffer until a newline arrives or the stream ends; they are scanned WHOLE at flush
+  (never split). A single-line (no-newline) response is a format-level choice — sub-line streaming of a
+  line-scoped-gated output is NOT sound, so it is deliberately not done.
+- **`_MAX_LINE = 65536`** (64 KB): an unterminated line (no newline ever arrives) beyond this cap is
+  withheld fail-closed — raises `OutputSecurityViolation`, nothing emitted (bounds memory; no partial emit).
+  No `_OVERLAP_CAP` / `_split_hold_overlap` — those helpers are gone.
 
 ## 4. Two required correctness details
 
@@ -121,11 +123,18 @@ retroactively leak earlier output. Slice 3's transport catches the raise and end
 
 ## 7. Honest residual (do NOT overclaim — FG-1)
 
-The **no-newline-overflow path is the only non-fully-sound corner**: a single line longer than `_MAX_LINE`
-containing a **high-entropy token longer than `_OVERLAP_CAP`** that straddles the cap boundary could evade
-the entropy detector (the token is split across two scanned chunks, each below the entropy threshold).
-**Bounded regexes (AKIA, PRIVATE KEY) are always protected** by the held overlap. The common
-newline-delimited path is fully sound. Documented in the module + the spec; not papered over.
+The no-newline-overflow partial-emit path **has been removed** (it was the source of confirmed secret-split
+leaks). There is no longer a partial-line emit of any kind.
+
+The new honest note: a single-line (no-newline) response buffers to completion and emits whole at flush
+(= format-level for that line — sub-line streaming of a line-scoped-gated output is NOT sound, so it is
+deliberately not done). An unterminated line beyond 64 KB (`_MAX_LINE`) is withheld fail-closed (raises
+`OutputSecurityViolation`; nothing emitted). No secret-split leak exists under this design.
+
+Two confirmed leak reproductions from adversarial review now have regression tests that assert each
+raises `OutputSecurityViolation` with nothing leaked:
+- `"x"*4000 + "-----BEGIN RSA PRIVATE KEY-----\n"` (SPACE in header, previously split at cut)
+- `"x"*4000 + "aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n"` (keyword+value split)
 
 ## 8. Out of scope (slice 3)
 

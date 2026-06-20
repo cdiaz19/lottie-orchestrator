@@ -47,24 +47,6 @@ def test_flush_emits_final_partial_clean_line() -> None:
     assert result == "a clean tail with no newline"
 
 
-def test_overflow_emits_with_overlap_and_reconstructs() -> None:
-    gate = StreamingSecretGate()
-    big = "x" * 9000  # > MAX_LINE (8192), no newline, all identifier chars
-    out = list(gate.scan_stream([big]))
-    assert len(out) >= 2                  # head emitted on overflow, tail at flush
-    assert "".join(out) == big            # byte-for-byte reconstruction
-
-
-def test_secret_in_overflow_buffer_raises_and_does_not_leak() -> None:
-    gate = StreamingSecretGate()
-    big = "x" * 9000 + _AKIA              # secret after a long no-newline run
-    out: list[str] = []
-    with pytest.raises(OutputSecurityViolation):
-        for piece in gate.scan_stream([big]):
-            out.append(piece)
-    assert _AKIA not in "".join(out)      # the secret never streamed
-
-
 def test_early_close_does_not_flush_held_buffer() -> None:
     """Flush is after the for-loop, NOT in a finally — so a consumer that closes the generator
     early never gets the unverified buffered tail (no leak), and close() does not raise."""
@@ -109,3 +91,50 @@ def test_configured_plugins_are_line_scoped() -> None:
 
     with default_settings() as settings:
         assert set(settings.plugins) == _LINE_SCOPED_PLUGINS
+
+
+# ---------------------------------------------------------------------------
+# Regression tests — the two confirmed leak paths, now caught (not emitted)
+# ---------------------------------------------------------------------------
+
+def test_private_key_header_with_space_in_long_line_caught_not_split() -> None:
+    """Regression: a secret containing a SPACE (PRIVATE KEY header) in a long line is caught whole,
+    never emitted split. The old overflow path leaked it across a mid-line cut."""
+    gate = StreamingSecretGate()
+    out: list[str] = []
+    line = "x" * 4000 + "-----BEGIN RSA PRIVATE KEY-----\n"
+    with pytest.raises(OutputSecurityViolation):
+        for piece in gate.scan_stream([line]):
+            out.append(piece)
+    assert "PRIVATE KEY" not in "".join(out)
+    assert "BEGIN" not in "".join(out)
+
+
+def test_keyword_secret_in_long_line_caught_not_split() -> None:
+    """Regression: same-line keyword secret in a long line is caught whole, value never emitted."""
+    gate = StreamingSecretGate()
+    out: list[str] = []
+    line = "x" * 4000 + "aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n"
+    with pytest.raises(OutputSecurityViolation):
+        for piece in gate.scan_stream([line]):
+            out.append(piece)
+    assert "wJalr" not in "".join(out)
+
+
+def test_unterminated_over_cap_line_fails_closed_no_partial_emit() -> None:
+    """An unterminated line beyond _MAX_LINE is withheld fail-closed — nothing emitted partially
+    (a partial emit could split a secret)."""
+    gate = StreamingSecretGate()
+    out: list[str] = []
+    with pytest.raises(OutputSecurityViolation):
+        for piece in gate.scan_stream(["x" * 70000]):  # > 64 KB, no newline
+            out.append(piece)
+    assert out == []  # NOTHING emitted before the fail-closed raise
+
+
+def test_long_single_line_under_cap_buffers_and_emits_whole_at_flush() -> None:
+    """A long but under-cap single line buffers and emits whole at flush (sound; format-level for a
+    single-line response) — byte-for-byte."""
+    gate = StreamingSecretGate()
+    text = "y" * 5000  # under cap, no newline, clean
+    assert "".join(gate.scan_stream([text])) == text

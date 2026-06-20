@@ -12,30 +12,16 @@ counterpart of serve/security.py's check_output. serve -> security is the establ
 
 from __future__ import annotations
 
-import re
 from collections.abc import Iterable, Iterator
 
 from lottie.security import SecretDetectionSkill
 from lottie.serve.errors import OutputSecurityViolation
 
-# A long single-line (no-newline) response is emitted in capped chunks to bound memory. We hold
-# back the trailing run of identifier/entropy characters (capped) so a partial high-entropy token —
-# or a bounded regex (AKIA=20, PRIVATE-KEY header ~40) straddling the cut — is never emitted; the
-# held tail is re-buffered and rescanned next round.
-_MAX_LINE = 8192
-_OVERLAP_CAP = 128
-_TRAILING_IDENT_RUN = re.compile(r"[A-Za-z0-9+/=_\-]*$")
-
-
-def _split_hold_overlap(buffer: str) -> tuple[str, str]:
-    """Split a no-newline overflow buffer into (head_to_emit, tail_to_hold). `tail` is the trailing
-    identifier/entropy run, capped at _OVERLAP_CAP; `head` is everything before it."""
-    run = _TRAILING_IDENT_RUN.search(buffer)
-    tail = run.group(0) if run else ""
-    if len(tail) > _OVERLAP_CAP:
-        tail = tail[-_OVERLAP_CAP:]
-    head = buffer[: len(buffer) - len(tail)]
-    return head, tail
+# Memory bound: an unterminated line beyond this cap is withheld fail-closed (raises) — never
+# emitted partially. A sub-line emit could split a line-scoped secret across two clean-looking
+# chunks (e.g. "-----BEGIN RSA PRIVATE " emits clean; " KEY-----" held → full header leaked).
+# 64 KB is generous for any real LLM line; no-newline responses buffer to completion and emit whole.
+_MAX_LINE = 65536
 
 
 class StreamingSecretGate:
@@ -50,22 +36,28 @@ class StreamingSecretGate:
             raise OutputSecurityViolation("output withheld: secret detected")
 
     def scan_stream(self, deltas: Iterable[str]) -> Iterator[str]:
-        """Line-buffer the deltas; emit only scanned-clean lines. The flush (final partial line)
-        is AFTER the for-loop, never in a finally — so an early consumer .close() skips it and no
-        unverified buffered bytes leak."""
+        """Line-buffer the deltas; emit ONLY complete scanned-clean lines (never partial-line bytes
+        — a sub-line emit could split a line-scoped secret across two clean-looking chunks). A
+        no-newline line buffers until a newline or stream end and is scanned WHOLE; an unterminated
+        line beyond _MAX_LINE is withheld fail-closed (bounds memory, never emits a partial line).
+        The flush is AFTER the for-loop, never in a finally — so an early consumer .close() drops
+        the unverified tail (no leak)."""
         buffer = ""
         for delta in deltas:
             buffer += delta
             while "\n" in buffer:
                 nl = buffer.index("\n")
-                line = buffer[: nl + 1]  # include newline; \r\n is preserved
+                # complete line INCLUDING its newline (\r\n preserved)
+                line = buffer[: nl + 1]
                 buffer = buffer[nl + 1 :]
                 self._raise_if_secret(line)
                 yield line
-            if len(buffer) > _MAX_LINE:           # no-newline overflow -> emit a capped clean chunk
-                head, buffer = _split_hold_overlap(buffer)
-                self._raise_if_secret(head)
-                yield head
-        if buffer:                                # flush the final partial line
+            # unterminated over-long line -> fail closed, no partial emit
+            if len(buffer) > _MAX_LINE:
+                raise OutputSecurityViolation(
+                    f"output withheld: unterminated line exceeds {_MAX_LINE} bytes"
+                )
+        # flush the final (complete-at-end) line, scanned whole
+        if buffer:
             self._raise_if_secret(buffer)
             yield buffer
