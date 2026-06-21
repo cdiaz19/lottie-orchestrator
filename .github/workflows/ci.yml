@@ -17,7 +17,9 @@ jobs:
           python-version: "3.12"
           enable-cache: true
       - name: Sync dependencies
-        run: uv sync --dev --extra chroma --extra serve --extra mesh
+        # ALL extras: otel (else mypy --strict can't resolve the optional OTLP exporter import) and
+        # api/Starlette (else the HTTP transport tests importorskip and silently skip in CI).
+        run: uv sync --dev --all-extras
       - name: Lint
         run: uv run ruff check .
       - name: Type check
