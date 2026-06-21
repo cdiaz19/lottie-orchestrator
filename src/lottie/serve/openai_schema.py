@@ -134,28 +134,54 @@ def error_dict(
     )
 
 
-def chat_completion_chunks(
-    *, agent: str, content: str, finish_reason: str
-) -> list[str]:
-    """OpenAI SSE lines for a completed chat response: a role delta, a content delta (only when
-    `content` is non-empty — a withheld output has none), the finish delta, then [DONE]. Each item
-    is a full `data: <json>\\n\\n` event; one shared id/created across the chunks."""
-    completion_id = f"chatcmpl-{uuid.uuid4().hex}"
-    created = int(time.time())
+class ChatChunkEncoder:
+    """Builds OpenAI chat.completion.chunk SSE events.
 
-    def _event(delta: dict[str, object], finish: str | None) -> str:
+    A single encoder instance shares one id/created timestamp across all events,
+    which is required for real-token streaming.
+    """
+
+    def __init__(self, model: str) -> None:
+        self._model = model
+        self._id = f"chatcmpl-{uuid.uuid4().hex}"
+        self._created = int(time.time())
+
+    def _event(self, delta: dict[str, object], finish: str | None) -> str:
         body: dict[str, object] = {
-            "id": completion_id,
+            "id": self._id,
             "object": "chat.completion.chunk",
-            "created": created,
-            "model": agent,
+            "created": self._created,
+            "model": self._model,
             "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
         }
         return f"data: {json.dumps(body)}\n\n"
 
-    lines = [_event({"role": "assistant"}, None)]
+    def role(self) -> str:
+        return self._event({"role": "assistant"}, None)
+
+    def content(self, text: str) -> str:
+        return self._event({"content": text}, None)
+
+    def finish(self, reason: str) -> str:
+        return self._event({}, reason)
+
+    @staticmethod
+    def done() -> str:
+        return "data: [DONE]\n\n"
+
+
+def chat_completion_chunks(
+    *, agent: str, content: str, finish_reason: str
+) -> list[str]:
+    """OpenAI SSE lines for a COMPLETED chat response (format-level).
+
+    Emits: role delta, a content delta (only when `content` is non-empty — a withheld
+    output has none), the finish delta, then [DONE].
+    """
+    enc = ChatChunkEncoder(agent)
+    lines = [enc.role()]
     if content:
-        lines.append(_event({"content": content}, None))
-    lines.append(_event({}, finish_reason))
-    lines.append("data: [DONE]\n\n")
+        lines.append(enc.content(content))
+    lines.append(enc.finish(finish_reason))
+    lines.append(enc.done())
     return lines
