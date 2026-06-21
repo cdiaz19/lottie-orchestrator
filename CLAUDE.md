@@ -15,6 +15,7 @@
 5. **Unit tests must not call real LLMs.** Use `MockLLMProvider` from `lottie.llm`. Real LLM calls only in eval tests.
 6. **Every file must pass `mypy --strict`.** No `Any` types without explicit justification.
 7. **Commit convention:** `feat:`, `fix:`, `docs:`, `chore:`, `test:` — conventional commits only.
+7b. **Never push or merge while CI is (or would be) red.** The local gate must match CI: run `uv run ruff check .`, `uv run mypy --strict src`, `uv run pytest -q` in an env with **all** extras installed (`uv sync --dev --all-extras`) before pushing — a green run with fewer extras hides missing-import (mypy) and `importorskip`-skipped tests (false green). CI installs `--all-extras` for the same reason. After pushing a branch, confirm the PR's checks are green (`gh pr checks`) before squash-merging.
 
 ### Security (non-negotiable)
 8. **All external inputs pass through `InputSanitizerSkill` first.** No raw external content ever reaches an agent directly.
