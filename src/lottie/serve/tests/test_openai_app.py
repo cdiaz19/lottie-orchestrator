@@ -480,3 +480,28 @@ def test_real_stream_audits_root_record(
     list(_sse_events(resp.text))                              # drain
     records = SqliteAuditLogger(demo).query(agent="EchoAgent")
     assert len(records) == 1 and records[0].root is True and records[0].status == "ok"
+
+
+def test_real_stream_budget_denial_ends_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A streamable agent over budget streams a 200 SSE ending finish_reason='error' (cannot 500
+    after a 200) and writes a budget_exceeded audit row — governance fires on the streamed path."""
+    from lottie.governance.audit import SqliteAuditLogger
+    from lottie.serve.openai_app import build_openai_app
+
+    demo = _streaming_chat_project(tmp_path, monkeypatch, "alpha\nbeta\n")
+    cfg = demo / "agents" / "echo" / "config.yaml"
+    cfg.write_text(cfg.read_text(encoding="utf-8") + "budget_usd: 0.0\n", encoding="utf-8")
+    monkeypatch.delenv("LOTTIE_DISABLE_AUDIT", raising=False)
+    client = TestClient(build_openai_app(demo))
+    resp = client.post(
+        "/v1/chat/completions",
+        json={"model": "echo", "messages": [{"role": "user", "content": "hi"}], "stream": True},
+    )
+    assert resp.status_code == 200  # committed to the SSE before the gate fires
+    chunks = [e for e in _sse_events(resp.text) if e != "[DONE]"]
+    assert chunks[-1]["choices"][0]["finish_reason"] == "error"
+    assert not any(c["choices"][0]["delta"].get("content") for c in chunks)  # nothing streamed
+    statuses = [r.status for r in SqliteAuditLogger(demo).query(agent="EchoAgent", limit=20)]
+    assert "budget_exceeded" in statuses
