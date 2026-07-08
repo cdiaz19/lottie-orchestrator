@@ -15,6 +15,8 @@ from lottie.project.discovery import (
     load_input_model,
     required_fields,
 )
+from lottie.serve.errors import SecurityViolation
+from lottie.serve.security import SecurityGate
 
 
 def run(
@@ -39,11 +41,17 @@ def run(
 
     try:
         agent_cls = load_agent_class(root, name)
-        agent = instantiate_agent(agent_cls, llm=llm, root=root, config=cfg)
+        agent = instantiate_agent(
+            agent_cls, llm=llm, root=root, config=cfg, security_gate=SecurityGate()
+        )
     except Exception as exc:
         raise typer.BadParameter(f"cannot load agent '{name}': {exc}") from exc
     try:
         result = agent.run(data)
+    except SecurityViolation as exc:
+        # Fail-closed refusal (rules 8 & 9). The message never echoes the payload.
+        typer.echo(f"blocked by security gate: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
     except typer.Exit:
         raise
     except Exception as exc:

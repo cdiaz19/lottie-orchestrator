@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from lottie.core.metrics import Kind
 from lottie.core.runnable import InstrumentedRunnable
+from lottie.core.security_gate import NullSecurityGate, SecurityGateProtocol
 from lottie.governance.audit import AuditLogger, build_audit_logger, hash_model
 from lottie.governance.capability import (
     CapabilityGate,
@@ -73,6 +74,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         self._policy: PolicyGate = NullPolicyGate()
         self._cost: CostGate = NullCostGate()
         self._capabilities: CapabilityGate = NullCapabilityGate()
+        self._security: SecurityGateProtocol = NullSecurityGate()
 
     def set_policy(self, gate: PolicyGate) -> None:
         """Attach a policy gate (called by instantiate_agent for CLI/serve runs)."""
@@ -85,6 +87,10 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
     def set_capability_gate(self, gate: CapabilityGate) -> None:
         """Attach a per-skill-call capability gate (rule 11, via instantiate_agent)."""
         self._capabilities = gate
+
+    def set_security_gate(self, gate: SecurityGateProtocol) -> None:
+        """Attach the input/output security gate (rules 8 & 9, via instantiate_agent)."""
+        self._security = gate
 
     @property
     def provider(self) -> str | None:
@@ -108,7 +114,12 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
             raise
 
     def run(self, data: InputT) -> OutputT:
-        """Policy + budget pre-checks, then instrumented run + audit (best-effort)."""
+        """Security input gate, policy + budget pre-checks, instrumented run, output gate, audit.
+
+        The security gate (rules 8 & 9) is a no-op by default and injected on gated paths
+        (`instantiate_agent(security_gate=...)` — the CLI). Its checks run OUTSIDE the
+        capability `_execute` window, so the gate's own security skills stay exempt (S1)."""
+        self._security.check_input(data.model_dump_json())  # rule 8: screen input first
         self._pre_run_gates(data)
         token = _audit_depth.set(_depth() + 1)
         is_root = _depth() == 1
@@ -119,9 +130,10 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
             cap_token = _active_capabilities.set(self._capabilities)
             try:
                 output = super().run(data)
-                return output
             finally:
                 _active_capabilities.reset(cap_token)
+            self._security.check_output(output.model_dump_json())  # rule 9: screen output
+            return output
         finally:
             try:
                 self._write_audit(data, output, is_root)
