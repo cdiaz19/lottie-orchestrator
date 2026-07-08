@@ -94,6 +94,10 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         """Attach a per-skill-call capability gate (rule 11, via instantiate_agent)."""
         self._capabilities = gate
 
+    def set_memory(self, client: MemoryClient) -> None:
+        """Attach a memory client (used by instantiate_agent when memory is enabled)."""
+        self.memory = client
+
     def set_security_gate(self, gate: SecurityGateProtocol) -> None:
         """Attach the input/output security gate (rules 8 & 9, via instantiate_agent)."""
         self._security = gate
