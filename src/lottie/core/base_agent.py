@@ -20,6 +20,11 @@ from pydantic import BaseModel
 from lottie.core.metrics import Kind
 from lottie.core.runnable import InstrumentedRunnable
 from lottie.governance.audit import AuditLogger, build_audit_logger, hash_model
+from lottie.governance.capability import (
+    CapabilityGate,
+    NullCapabilityGate,
+    _active_capabilities,
+)
 from lottie.governance.cost import BudgetExceeded, CostGate, NullCostGate
 from lottie.governance.policy import NullPolicyGate, PolicyEscalation, PolicyGate, PolicyViolation
 from lottie.governance.schema import AuditRecord
@@ -67,6 +72,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         self._audit = audit if audit is not None else build_audit_logger(self._benchmarks_root)
         self._policy: PolicyGate = NullPolicyGate()
         self._cost: CostGate = NullCostGate()
+        self._capabilities: CapabilityGate = NullCapabilityGate()
 
     def set_policy(self, gate: PolicyGate) -> None:
         """Attach a policy gate (called by instantiate_agent for CLI/serve runs)."""
@@ -75,6 +81,10 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
     def set_cost_gate(self, gate: CostGate) -> None:
         """Attach a cost-budget gate (called by instantiate_agent for CLI/serve runs)."""
         self._cost = gate
+
+    def set_capability_gate(self, gate: CapabilityGate) -> None:
+        """Attach a per-skill-call capability gate (rule 11, via instantiate_agent)."""
+        self._capabilities = gate
 
     @property
     def provider(self) -> str | None:
@@ -104,8 +114,14 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         is_root = _depth() == 1
         output: OutputT | None = None
         try:
-            output = super().run(data)
-            return output
+            # Capability gate active only for THIS agent's `_execute` window, so
+            # framework skills invoked outside it (e.g. the security gate) are exempt.
+            cap_token = _active_capabilities.set(self._capabilities)
+            try:
+                output = super().run(data)
+                return output
+            finally:
+                _active_capabilities.reset(cap_token)
         finally:
             try:
                 self._write_audit(data, output, is_root)
@@ -124,7 +140,11 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         token = _audit_depth.set(_depth() + 1)
         is_root = _depth() == 1
         try:
-            yield from self._instrument_stream(self._stream(data))
+            cap_token = _active_capabilities.set(self._capabilities)
+            try:
+                yield from self._instrument_stream(self._stream(data))
+            finally:
+                _active_capabilities.reset(cap_token)
         finally:
             try:
                 # output=None: a stream has no single typed Output
