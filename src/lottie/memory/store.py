@@ -13,7 +13,8 @@ import time
 import uuid
 from pathlib import Path
 
-from lottie.memory.base import MemoryClient, MemoryNotFoundError
+from lottie.memory.base import MemoryClient, MemoryNotFoundError, NullMemoryClient
+from lottie.memory.mock import MockMemoryClient
 from lottie.memory.schema import (
     MemoryHit,
     MemoryOrigin,
@@ -159,3 +160,16 @@ class SqliteMemoryClient(MemoryClient):
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
+
+
+def build_memory_client(root: Path, *, backend: str, path: str) -> MemoryClient:
+    """Construct a MemoryClient from primitive config (acyclic — no AgentConfig import).
+
+    'sqlite' → durable store at <root>/<path>; 'mock' → in-memory; anything else
+    (incl. 'null') → NullMemoryClient (fail-loud).
+    """
+    if backend == "sqlite":
+        return SqliteMemoryClient(Path(root) / path)
+    if backend == "mock":
+        return MockMemoryClient()
+    return NullMemoryClient()
