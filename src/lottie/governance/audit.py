@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import os
 import sqlite3
+import time
 import warnings
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -36,7 +37,18 @@ CREATE TABLE IF NOT EXISTS audit (
     error TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_audit_agent_ts ON audit (agent, ts);
+CREATE TABLE IF NOT EXISTS reservations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent TEXT NOT NULL,
+    amount REAL NOT NULL,
+    created REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_reservations_agent ON reservations (agent);
 """
+
+# A reservation older than this (seconds) is assumed orphaned by a crashed run and swept
+# before an admission decision, so a killed process cannot permanently shrink a budget.
+_RESERVATION_TTL_S = 3600.0
 
 _COLUMNS = (
     "ts, agent, provider, status, root, input_sha256, output_sha256, "
@@ -132,6 +144,59 @@ class SqliteAuditLogger(AuditLogger):
             "SELECT COALESCE(SUM(cost_usd), 0.0) FROM audit WHERE agent = ?", (agent,)
         ).fetchone()
         return float(row[0])
+
+    def reserve(self, agent: str, amount: float, budget: float) -> int | None:
+        """Atomically admit a run under budget, holding `amount` (fail-closed on races).
+
+        Under one BEGIN IMMEDIATE transaction (file-level RESERVED lock — serializes across
+        connections/processes): sweep orphaned reservations, sum committed spend + outstanding
+        reservations, and admit only if `committed + reserved + amount <= budget`. Returns the
+        reservation id on admission, or None if it would exceed budget (caller blocks). This
+        closes the check-then-act TOCTOU: a concurrent unsettled reservation is counted here.
+
+        A reservation older than ``_RESERVATION_TTL_S`` (1 hour) is assumed orphaned by a
+        crashed run and swept before the sum, so a killed process cannot permanently shrink a
+        budget. Trade-off: a genuine run that lasts longer than the TTL could have its hold
+        swept and its headroom re-admitted to a concurrent run (documented; raise the TTL for
+        deployments with very-long-running agents).
+        """
+        conn = self._connect()
+        now = time.time()
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute(
+                "DELETE FROM reservations WHERE created < ?", (now - _RESERVATION_TTL_S,)
+            )
+            committed = conn.execute(
+                "SELECT COALESCE(SUM(cost_usd), 0.0) FROM audit WHERE agent = ?", (agent,)
+            ).fetchone()[0]
+            reserved = conn.execute(
+                "SELECT COALESCE(SUM(amount), 0.0) FROM reservations WHERE agent = ?", (agent,)
+            ).fetchone()[0]
+            if float(committed) + float(reserved) + amount > budget:
+                conn.rollback()
+                return None
+            cur = conn.execute(
+                "INSERT INTO reservations (agent, amount, created) VALUES (?, ?, ?)",
+                (agent, amount, now),
+            )
+            conn.commit()
+            if cur.lastrowid is None:  # AUTOINCREMENT always yields a rowid post-INSERT
+                raise RuntimeError("reservation insert returned no rowid")
+            return int(cur.lastrowid)
+        except Exception:
+            conn.rollback()  # always release the RESERVED lock
+            raise
+
+    def settle(self, reservation_id: int) -> None:
+        """Release a reservation once the run's real cost is recorded in `audit`. Best-effort:
+        a failed delete must never break a run (a stale row is swept by TTL on the next reserve)."""
+        try:
+            conn = self._connect()
+            conn.execute("DELETE FROM reservations WHERE id = ?", (reservation_id,))
+            conn.commit()
+        except Exception as exc:
+            warnings.warn(f"reservation settle failed: {exc}", stacklevel=2)
 
 
 def build_audit_logger(root: Path) -> AuditLogger:

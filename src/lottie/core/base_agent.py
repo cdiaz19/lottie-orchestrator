@@ -26,7 +26,7 @@ from lottie.governance.capability import (
     NullCapabilityGate,
     _active_capabilities,
 )
-from lottie.governance.cost import BudgetExceeded, CostGate, NullCostGate
+from lottie.governance.cost import BudgetExceeded, CostGate, NullCostGate, TokenCapExceeded
 from lottie.governance.policy import NullPolicyGate, PolicyEscalation, PolicyGate, PolicyViolation
 from lottie.governance.schema import AuditRecord
 from lottie.llm import LLMProvider, LLMResponse, Message
@@ -75,6 +75,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         self._cost: CostGate = NullCostGate()
         self._capabilities: CapabilityGate = NullCapabilityGate()
         self._security: SecurityGateProtocol = NullSecurityGate()
+        self._max_run_tokens: int | None = None
 
     def set_policy(self, gate: PolicyGate) -> None:
         """Attach a policy gate (called by instantiate_agent for CLI/serve runs)."""
@@ -92,18 +93,23 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         """Attach the input/output security gate (rules 8 & 9, via instantiate_agent)."""
         self._security = gate
 
+    def set_run_limits(self, *, max_run_tokens: int | None) -> None:
+        """Set the per-run token cap (None = unlimited), via instantiate_agent."""
+        self._max_run_tokens = max_run_tokens
+
     @property
     def provider(self) -> str | None:
         return self.llm.model
 
-    def _pre_run_gates(self, data: InputT) -> None:
-        """Policy then budget pre-checks; audit a block and re-raise if either trips.
+    def _pre_run_gates(self, data: InputT) -> int | None:
+        """Policy check then budget reservation; audit a block and re-raise if either trips.
 
+        Returns the cost-reservation handle (or None) for the caller to settle after the run.
         Shared by run and run_stream.
         """
         try:
-            self._policy.check()   # capability policy — checked FIRST (no I/O)
-            self._cost.check()     # cumulative budget — checked SECOND (reads the ledger)
+            self._policy.check()       # capability policy — checked FIRST (no I/O)
+            return self._cost.reserve()  # budget — atomically reserve (or legacy check)
         except PolicyViolation as exc:
             self._write_block(
                 data, exc, "escalated" if isinstance(exc, PolicyEscalation) else "denied"
@@ -120,7 +126,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         (`instantiate_agent(security_gate=...)` — the CLI). Its checks run OUTSIDE the
         capability `_execute` window, so the gate's own security skills stay exempt (S1)."""
         self._security.check_input(data.model_dump_json())  # rule 8: screen input first
-        self._pre_run_gates(data)
+        handle = self._pre_run_gates(data)  # policy + atomic budget reservation
         token = _audit_depth.set(_depth() + 1)
         is_root = _depth() == 1
         output: OutputT | None = None
@@ -138,6 +144,12 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
             try:
                 self._write_audit(data, output, is_root)
             finally:
+                # Settle AFTER audit records the real cost: during the tiny window both the
+                # reservation AND the committed cost count (over-count — the safe direction for
+                # a budget gate). Cost accounting relies on audit.log() succeeding (it is the
+                # ledger); if that best-effort write fails, budget tracking degrades as it does
+                # for any audit-backed gate — an inherent, documented property.
+                self._cost.settle(handle)
                 _audit_depth.reset(token)
 
     def run_stream(self, data: InputT) -> Generator[str, None, None]:
@@ -148,7 +160,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         piece; nothing runs if the generator is never iterated. The output security gate is NOT
         here — it wraps the deltas at the serve boundary (slice 3b), like the non-streaming gate.
         """
-        self._pre_run_gates(data)
+        handle = self._pre_run_gates(data)  # policy + atomic budget reservation
         token = _audit_depth.set(_depth() + 1)
         is_root = _depth() == 1
         try:
@@ -162,6 +174,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
                 # output=None: a stream has no single typed Output
                 self._write_audit(data, None, is_root)
             finally:
+                self._cost.settle(handle)
                 _audit_depth.reset(token)
 
     def _write_block(
@@ -214,6 +227,18 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         except Exception as exc:  # never let auditing break a run
             warnings.warn(f"audit record failed: {exc}", stacklevel=2)
 
+    def _enforce_token_cap(self) -> None:
+        """Raise TokenCapExceeded if the active run has passed its per-run token cap.
+
+        Called after each usage accrual, so a runaway run aborts before the NEXT LLM call."""
+        cap = self._max_run_tokens
+        if cap is not None and self._active_ctx is not None:
+            used = self._active_ctx.input_tokens + self._active_ctx.output_tokens
+            if used > cap:
+                raise TokenCapExceeded(
+                    f"agent {self.name!r} exceeded its per-run token cap: {used} > {cap}"
+                )
+
     def complete(
         self,
         messages: list[Message],
@@ -223,6 +248,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         response = self.llm.complete(messages, model_params)
         if self._active_ctx is not None:
             self._active_ctx.add_usage(response.usage, response.cost_usd)
+            self._enforce_token_cap()
         return response
 
     def _stream(self, data: InputT) -> Iterator[str]:
@@ -243,6 +269,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         result: StreamResult = yield from self.llm.stream_complete(messages, model_params)
         if self._active_ctx is not None:
             self._active_ctx.add_usage(result.usage, result.cost_usd)
+            self._enforce_token_cap()
 
     @abstractmethod
     def _execute(self, data: InputT) -> OutputT: ...

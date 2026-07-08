@@ -43,6 +43,8 @@ class AgentConfig(BaseModel):
     workers: list[str] = []  # mesh routing allow-set (capability enforcement)
     interrupt_before: list[str] = []  # mesh workers that pause for human approval (HITL)
     budget_usd: float | None = None  # per-agent cumulative spend cap; None = unlimited
+    max_run_usd: float | None = None  # per-run cost ceiling + atomic-reservation amount (TOCTOU)
+    max_run_tokens: int | None = None  # per-run token cap; None = unlimited
     chat: ChatConfig | None = None  # None = agent not exposed on /v1/chat/completions
 
 
