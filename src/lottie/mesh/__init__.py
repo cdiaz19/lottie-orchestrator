@@ -3,7 +3,12 @@
 from lottie.mesh.base import MeshAgent
 from lottie.mesh.checkpoint import build_checkpointer
 from lottie.mesh.engine import MeshEngine, MeshNode, RouteFn
-from lottie.mesh.errors import CapabilityViolation, MeshError, MeshStepLimitExceeded
+from lottie.mesh.errors import (
+    CapabilityViolation,
+    EditedInputError,
+    MeshError,
+    MeshStepLimitExceeded,
+)
 from lottie.mesh.local import LocalEngine
 from lottie.mesh.router import SupervisorRouter
 from lottie.mesh.schema import (
@@ -22,6 +27,7 @@ __all__ = [
     "FINISH",
     "ApprovalDecision",
     "CapabilityViolation",
+    "EditedInputError",
     "LocalEngine",
     "MeshAgent",
     "MeshEngine",

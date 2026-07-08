@@ -167,7 +167,7 @@ class AgentService:
         is process-local (only the process that ran the interrupt can resume).
         """
         # lazy imports: keep serve importable without the [mesh] extra
-        from lottie.mesh.errors import ThreadNotFoundError
+        from lottie.mesh.errors import EditedInputError, ThreadNotFoundError
         from lottie.mesh.schema import ApprovalDecision
 
         self._require_agent(name)
@@ -185,6 +185,8 @@ class AgentService:
             output = resume(thread_id, approval)
         except ThreadNotFoundError as exc:
             raise ThreadNotFound(f"thread '{thread_id}' not found") from exc
+        except EditedInputError as exc:  # bad human edit → client error, not 500
+            raise InvalidInputError(f"invalid edited_input: {exc}") from exc
         except Exception as exc:  # noqa: BLE001 — any other failure → one typed error
             raise AgentExecutionError(f"agent '{name}' failed: {exc}") from exc
         self._check_output(agent, output)

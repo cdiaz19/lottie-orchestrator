@@ -17,3 +17,7 @@ class MeshStepLimitExceeded(MeshError):
 
 class ThreadNotFoundError(MeshError):
     """No checkpoint exists for the given thread_id (never existed, or pruned)."""
+
+
+class EditedInputError(MeshError):
+    """An approve decision's `edited_input` names a non-editable field or fails validation."""

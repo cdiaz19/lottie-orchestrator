@@ -272,6 +272,36 @@ def test_resume_route_happy_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert resumed.json()["status"] in {"complete", "interrupted"}
 
 
+def test_resume_edited_input_applied(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _needs_mesh()
+    from lottie.serve.rest_app import build_rest_app
+
+    demo = _gate_mesh_project(tmp_path, monkeypatch)
+    client = TestClient(build_rest_app(demo))
+    tid = client.post("/v1/agents/gate/run", json={"task": "ship"}).json()["thread_id"]
+    decision = {"action": "approve", "edited_input": {"task": "EDITED"}}
+    resumed = client.post(
+        "/v1/agents/gate/resume", json={"thread_id": tid, "decision": decision}
+    )
+    assert resumed.status_code == 200
+    assert resumed.json()["status"] in {"complete", "interrupted"}
+
+
+def test_resume_bad_edited_input_400(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _needs_mesh()
+    from lottie.serve.rest_app import build_rest_app
+
+    demo = _gate_mesh_project(tmp_path, monkeypatch)
+    client = TestClient(build_rest_app(demo))
+    tid = client.post("/v1/agents/gate/run", json={"task": "ship"}).json()["thread_id"]
+    resp = client.post(
+        "/v1/agents/gate/resume",
+        json={"thread_id": tid, "decision": {"action": "approve", "edited_input": {"bogus": "x"}}},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["type"] == "invalid_request"
+
+
 def test_resume_unknown_agent_404(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from lottie.serve.rest_app import build_rest_app
 
