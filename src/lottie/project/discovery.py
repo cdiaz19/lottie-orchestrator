@@ -16,7 +16,7 @@ from typing import Literal
 import typer
 from pydantic import BaseModel
 
-from lottie.core import BaseAgent
+from lottie.core import BaseAgent, SecurityGateProtocol
 from lottie.governance.capability import build_capability_gate
 from lottie.governance.cost import build_cost_gate
 from lottie.governance.policy import build_policy_gate
@@ -186,6 +186,7 @@ def instantiate_agent(
     root: Path,
     config: AgentConfig,
     enable_benchmarks: bool | None = None,
+    security_gate: SecurityGateProtocol | None = None,
 ) -> BaseAgent[BaseModel, BaseModel]:
     """Construct an agent using the from_project seam when available.
 
@@ -223,6 +224,11 @@ def instantiate_agent(
     # Rule 11: per-skill-call whitelist. Empty capabilities -> NullCapabilityGate
     # (no enforcement); a non-empty list blocks any skill the agent didn't declare.
     agent.set_capability_gate(build_capability_gate(capabilities=config.capabilities))
+    # Rules 8 & 9: input/output security gate on the BaseAgent chokepoint. Attached only
+    # when a caller injects one (the CLI passes serve.security.SecurityGate); serve leaves
+    # it None and gates externally in AgentService, so no path is gated twice.
+    if security_gate is not None:
+        agent.set_security_gate(security_gate)
     return agent
 
 
