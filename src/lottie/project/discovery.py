@@ -226,7 +226,9 @@ def instantiate_agent(
             max_run_usd=config.max_run_usd,
         )
     )
-    agent.set_run_limits(max_run_tokens=config.max_run_tokens)
+    agent.set_run_limits(
+        max_run_tokens=config.max_run_tokens, max_turns=config.max_turns
+    )
     # Rule 11: per-skill-call whitelist. Empty capabilities -> NullCapabilityGate
     # (no enforcement); a non-empty list blocks any skill the agent didn't declare.
     agent.set_capability_gate(build_capability_gate(capabilities=config.capabilities))

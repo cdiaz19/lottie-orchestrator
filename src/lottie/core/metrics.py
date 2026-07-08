@@ -46,6 +46,7 @@ class RunContext:
     output_tokens: int = 0
     cost_usd: float = 0.0
     retry_count: int = 0
+    turns: int = 0  # LLM completion count this run (bounded by max_turns)
     metrics: RunMetrics | None = field(default=None)
 
     def add_usage(self, usage: TokenUsage, cost_usd: float = 0.0) -> None:
