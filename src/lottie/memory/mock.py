@@ -7,8 +7,14 @@ a real store. Unit tests must never touch a real store (CLAUDE.md rule 5).
 
 from __future__ import annotations
 
-from lottie.memory.base import MemoryClient
-from lottie.memory.schema import MemoryHit, MemoryQuery, MemoryRecord, RecallResult
+from lottie.memory.base import MemoryClient, MemoryNotFoundError
+from lottie.memory.schema import (
+    MemoryHit,
+    MemoryPatch,
+    MemoryQuery,
+    MemoryRecord,
+    RecallResult,
+)
 
 
 class MockMemoryClient(MemoryClient):
@@ -41,6 +47,15 @@ class MockMemoryClient(MemoryClient):
                 continue
             hits.append(MemoryHit(record=record, score=1.0))  # mock: no ranking
         return RecallResult(hits=hits[: query.limit])
+
+    def update(self, memory_id: str, patch: MemoryPatch) -> MemoryRecord:
+        for i, record in enumerate(self.records):
+            if record.memory_id == memory_id:
+                changes = patch.model_dump(exclude_none=True)
+                updated = record.model_copy(update=changes)
+                self.records[i] = updated
+                return updated
+        raise MemoryNotFoundError(memory_id)
 
     def forget(self, memory_id: str) -> bool:
         for i, record in enumerate(self.records):

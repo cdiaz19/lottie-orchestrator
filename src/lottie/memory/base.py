@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from lottie.memory.schema import MemoryQuery, MemoryRecord, RecallResult
+from lottie.memory.schema import MemoryPatch, MemoryQuery, MemoryRecord, RecallResult
 
 
 class MemoryStoreError(Exception):
@@ -19,6 +19,10 @@ class MemoryStoreError(Exception):
 
 class MemoryNotConfiguredError(MemoryStoreError):
     """Raised when an agent uses memory without a configured client."""
+
+
+class MemoryNotFoundError(MemoryStoreError):
+    """Raised when update/forget targets a memory_id that does not exist."""
 
 
 class MemoryClient(ABC):
@@ -31,6 +35,14 @@ class MemoryClient(ABC):
     @abstractmethod
     def recall(self, query: MemoryQuery) -> RecallResult:
         """Return records matching `query`, ranked by relevance."""
+
+    @abstractmethod
+    def update(self, memory_id: str, patch: MemoryPatch) -> MemoryRecord:
+        """Apply `patch` to the record with `memory_id`; return the updated record.
+
+        Incremental only — unset patch fields are left unchanged. Raises
+        `MemoryNotFoundError` if no such record exists.
+        """
 
     @abstractmethod
     def forget(self, memory_id: str) -> bool:
@@ -46,6 +58,9 @@ class NullMemoryClient(MemoryClient):
         raise MemoryNotConfiguredError(self._MSG)
 
     def recall(self, query: MemoryQuery) -> RecallResult:
+        raise MemoryNotConfiguredError(self._MSG)
+
+    def update(self, memory_id: str, patch: MemoryPatch) -> MemoryRecord:
         raise MemoryNotConfiguredError(self._MSG)
 
     def forget(self, memory_id: str) -> bool:
