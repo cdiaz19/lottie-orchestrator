@@ -219,8 +219,14 @@ def instantiate_agent(
     # and `serve` (cwd == root). A caller that instantiates with root != cwd would split
     # the ledger — out of scope (no shipped call site does this).
     agent.set_cost_gate(
-        build_cost_gate(root, agent=agent.name, budget_usd=config.budget_usd)
+        build_cost_gate(
+            root,
+            agent=agent.name,
+            budget_usd=config.budget_usd,
+            max_run_usd=config.max_run_usd,
+        )
     )
+    agent.set_run_limits(max_run_tokens=config.max_run_tokens)
     # Rule 11: per-skill-call whitelist. Empty capabilities -> NullCapabilityGate
     # (no enforcement); a non-empty list blocks any skill the agent didn't declare.
     agent.set_capability_gate(build_capability_gate(capabilities=config.capabilities))
