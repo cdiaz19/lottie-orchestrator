@@ -109,6 +109,8 @@ def rest_routes(svc: AgentService, root: Path) -> list[Route]:
             return JSONResponse(
                 withheld_dict(name, input_tokens=exc.input_tokens, output_tokens=exc.output_tokens)
             )
+        except InvalidInputError:
+            return json_error(400, "invalid edited_input", type_="invalid_request")
         except NotResumable:
             return json_error(400, f"agent '{name}' is not resumable", type_="not_resumable")
         except ThreadNotFound:

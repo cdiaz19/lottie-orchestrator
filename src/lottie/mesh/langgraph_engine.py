@@ -8,9 +8,11 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from pydantic import ValidationError
+
 from lottie.mesh.checkpoint import build_checkpointer
 from lottie.mesh.engine import MeshEngine, MeshNode, RouteFn
-from lottie.mesh.errors import MeshError, ThreadNotFoundError
+from lottie.mesh.errors import EditedInputError, MeshError, ThreadNotFoundError
 from lottie.mesh.schema import (
     FINISH,
     ApprovalDecision,
@@ -181,8 +183,29 @@ class LangGraphEngine(MeshEngine):
                 {"history": [StepResult(worker=worker, result="rejected by human", step=base)]},
                 as_node=worker,
             )
-        # On approve: resuming with None lets langgraph run the interrupted node and
-        # continue. `edited_input` is intentionally not applied here (deliberate
-        # simplification for this task — approve just continues the checkpoint).
+        # On approve with edits: apply the human-edited MeshState fields to the checkpoint
+        # BEFORE resuming, so the interrupted worker runs on the edited state. Fail-closed.
+        if decision.action == "approve" and decision.edited_input:
+            self._apply_edited_input(graph, config, snap.values, decision.edited_input)
+        # Resuming with None lets langgraph run the interrupted node and continue.
         graph.invoke(None, config)
         return self._snapshot(graph, config, thread_id)
+
+    @staticmethod
+    def _apply_edited_input(
+        graph: Any, config: dict[str, Any], values: Mapping[str, Any], edited: Mapping[str, str]
+    ) -> None:
+        """Validate + apply edited MeshState fields (task/final) to the checkpoint, fail-closed."""
+        # string fields a human may override; `history` is reducer-managed, not editable
+        editable = {"task", "final"}
+        unknown = set(edited) - editable
+        if unknown:
+            raise EditedInputError(
+                f"edited_input names non-editable field(s): {sorted(unknown)} "
+                f"(editable: {sorted(editable)})"
+            )
+        try:
+            MeshState.model_validate({**dict(values), **dict(edited)})
+        except ValidationError as exc:
+            raise EditedInputError(f"edited_input failed validation: {exc}") from exc
+        graph.update_state(config, dict(edited))
