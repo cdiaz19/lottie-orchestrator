@@ -153,6 +153,12 @@ class SqliteAuditLogger(AuditLogger):
         reservations, and admit only if `committed + reserved + amount <= budget`. Returns the
         reservation id on admission, or None if it would exceed budget (caller blocks). This
         closes the check-then-act TOCTOU: a concurrent unsettled reservation is counted here.
+
+        A reservation older than ``_RESERVATION_TTL_S`` (1 hour) is assumed orphaned by a
+        crashed run and swept before the sum, so a killed process cannot permanently shrink a
+        budget. Trade-off: a genuine run that lasts longer than the TTL could have its hold
+        swept and its headroom re-admitted to a concurrent run (documented; raise the TTL for
+        deployments with very-long-running agents).
         """
         conn = self._connect()
         now = time.time()
@@ -175,7 +181,9 @@ class SqliteAuditLogger(AuditLogger):
                 (agent, amount, now),
             )
             conn.commit()
-            return int(cur.lastrowid) if cur.lastrowid is not None else None
+            if cur.lastrowid is None:  # AUTOINCREMENT always yields a rowid post-INSERT
+                raise RuntimeError("reservation insert returned no rowid")
+            return int(cur.lastrowid)
         except Exception:
             conn.rollback()  # always release the RESERVED lock
             raise

@@ -144,8 +144,11 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
             try:
                 self._write_audit(data, output, is_root)
             finally:
-                # Settle AFTER audit records the real cost, so headroom is never briefly
-                # under-counted (a concurrent run over-counts instead — the safe direction).
+                # Settle AFTER audit records the real cost: during the tiny window both the
+                # reservation AND the committed cost count (over-count — the safe direction for
+                # a budget gate). Cost accounting relies on audit.log() succeeding (it is the
+                # ledger); if that best-effort write fails, budget tracking degrades as it does
+                # for any audit-backed gate — an inherent, documented property.
                 self._cost.settle(handle)
                 _audit_depth.reset(token)
 
