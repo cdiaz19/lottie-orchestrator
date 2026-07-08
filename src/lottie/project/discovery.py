@@ -17,6 +17,7 @@ import typer
 from pydantic import BaseModel
 
 from lottie.core import BaseAgent
+from lottie.governance.capability import build_capability_gate
 from lottie.governance.cost import build_cost_gate
 from lottie.governance.policy import build_policy_gate
 from lottie.llm import LLMProvider
@@ -219,6 +220,9 @@ def instantiate_agent(
     agent.set_cost_gate(
         build_cost_gate(root, agent=agent.name, budget_usd=config.budget_usd)
     )
+    # Rule 11: per-skill-call whitelist. Empty capabilities -> NullCapabilityGate
+    # (no enforcement); a non-empty list blocks any skill the agent didn't declare.
+    agent.set_capability_gate(build_capability_gate(capabilities=config.capabilities))
     return agent
 
 

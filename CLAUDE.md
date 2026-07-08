@@ -21,7 +21,7 @@
 8. **All external inputs pass through `InputSanitizerSkill` first.** No raw external content ever reaches an agent directly.
 9. **All LLM outputs pass through `OutputValidationSkill` and `SecretDetectionSkill`** before leaving Lottie.
 10. **Knowledge ingest always runs `PromptInjectionScanSkill` and `SecretDetectionSkill`.** No exceptions, even for trusted sources.
-11. **Agents can only call skills declared in their `config.yaml` `capabilities` list.** The `CapabilityEnforcerSkill` blocks anything else at runtime.
+11. **Agents can only call skills declared in their `config.yaml` `capabilities` list.** The capability gate (`governance/capability.py` — in `governance/`, not `security/`, so `core` can import it without a `core↔security` cycle) blocks any undeclared skill call at runtime, fail-closed. Enforced in `BaseSkill.run` via a `_execute`-scoped ContextVar the agent activates (framework security skills, invoked outside `_execute`, are exempt). Whitelist-when-nonempty: empty `capabilities` = no enforcement.
 12. **Agents write only to `knowledge/draft/`.** Promotion to `curated` always requires human review.
 13. **Generated code always runs through** `SecretDetectionSkill` → `CodeSecurityScanSkill` (bandit) → `mypy` → `ruff` before any file write.
 
@@ -40,13 +40,14 @@ src/lottie/
   llm/          — LLMProvider, MockLLMProvider, litellm adapter
   cli/          — Typer CLI (lottie run, create, benchmark, memory, serve)
   security/     — InputSanitizerSkill, SecretDetectionSkill, PromptInjectionScanSkill,
-                  OutputValidationSkill, CapabilityEnforcerSkill, CodeSecurityScanSkill
+                  OutputValidationSkill, CodeSecurityScanSkill
+                  (capability enforcement lives in governance/capability.py — see rule 11)
   knowledge/    — manifest, YAML loader, networkx graph, GraphIngestSkill
   mesh/         — MeshAgent, MeshEngine (LocalEngine default; LangGraphEngine via [mesh] extra),
                   SupervisorRouter, checkpointer, mesh schemas. A mesh is itself a BaseAgent
                   (reuses run/serve/benchmark). LangGraphEngine adds parallel fan-out, HITL
                   interrupt/resume, and checkpoint time-travel; LocalEngine stays zero-dep.
-  governance/   — audit logger, policy engine, cost tracker
+  governance/   — audit logger, policy engine, cost tracker, capability gate (rule 11)
 agents/         — user-defined agents (each a self-contained module)
 skills/         — user-defined skills (stateless, deterministic)
 knowledge/      — raw docs (YAML frontmatter + content)
