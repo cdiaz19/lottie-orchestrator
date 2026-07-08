@@ -206,6 +206,8 @@ class LangGraphEngine(MeshEngine):
             )
         try:
             MeshState.model_validate({**dict(values), **dict(edited)})
-        except ValidationError as exc:
+        except ValidationError as exc:  # pragma: no cover - defensive: unreachable while the
+            # editable fields (task/final) are strings and edited_input is dict[str, str]; kept
+            # as a guard for any future non-string editable field.
             raise EditedInputError(f"edited_input failed validation: {exc}") from exc
         graph.update_state(config, dict(edited))
