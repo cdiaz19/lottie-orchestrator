@@ -31,6 +31,7 @@ from lottie.serve.openai_schema import (
     chat_completion_dict,
     last_user_message,
 )
+from lottie.serve.pagination import page_bounds
 from lottie.serve.service import (
     AgentExecutionError,
     AgentLoadError,
@@ -151,7 +152,8 @@ def openai_routes(svc: AgentService, root: Path) -> list[Route]:
             for unit in discover_agents(root)
             if _chat_config(root, unit.name) is not None
         ]
-        return JSONResponse({"object": "list", "data": data})
+        limit, offset = page_bounds(request.query_params)
+        return JSONResponse({"object": "list", "data": data[offset : offset + limit]})
 
     async def chat_completions(request: Request) -> Response:
         # 1. parse
