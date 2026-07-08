@@ -38,6 +38,10 @@ class NotStreamable(RuntimeError):
     """Raised if `_stream` is called on an agent that did not opt in."""
 
 
+class TurnLimitExceeded(RuntimeError):
+    """A run made more LLM completions than its `max_turns` cap (runaway-loop guard)."""
+
+
 # Run depth → the `root` flag (depth 1 = top-level). A ContextVar (not threading.local)
 # so the depth propagates into LangGraph parallel worker threads (langgraph copies the
 # context when it forks branches), keeping nested workers root=False on any thread.
@@ -76,6 +80,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         self._capabilities: CapabilityGate = NullCapabilityGate()
         self._security: SecurityGateProtocol = NullSecurityGate()
         self._max_run_tokens: int | None = None
+        self._max_turns: int | None = None
 
     def set_policy(self, gate: PolicyGate) -> None:
         """Attach a policy gate (called by instantiate_agent for CLI/serve runs)."""
@@ -93,9 +98,12 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         """Attach the input/output security gate (rules 8 & 9, via instantiate_agent)."""
         self._security = gate
 
-    def set_run_limits(self, *, max_run_tokens: int | None) -> None:
-        """Set the per-run token cap (None = unlimited), via instantiate_agent."""
+    def set_run_limits(
+        self, *, max_run_tokens: int | None = None, max_turns: int | None = None
+    ) -> None:
+        """Set per-run limits (None = unlimited): token cap + LLM-completion (turn) cap."""
         self._max_run_tokens = max_run_tokens
+        self._max_turns = max_turns
 
     @property
     def provider(self) -> str | None:
@@ -138,6 +146,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
                 output = super().run(data)
             finally:
                 _active_capabilities.reset(cap_token)
+            self._verify(data, output)  # agent post-condition (fail-closed) before success
             self._security.check_output(output.model_dump_json())  # rule 9: screen output
             return output
         finally:
@@ -239,6 +248,24 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
                     f"agent {self.name!r} exceeded its per-run token cap: {used} > {cap}"
                 )
 
+    def _count_turn(self) -> None:
+        """Increment the run's completion count and enforce max_turns (runaway-loop guard)."""
+        if self._active_ctx is None:
+            return
+        self._active_ctx.turns += 1
+        cap = self._max_turns
+        if cap is not None and self._active_ctx.turns > cap:
+            raise TurnLimitExceeded(
+                f"agent {self.name!r} exceeded its max_turns: {self._active_ctx.turns} > {cap}"
+            )
+
+    def _verify(self, data: InputT, output: OutputT) -> None:
+        """Post-`_execute` hook. Default no-op; override to assert output post-conditions.
+
+        Raising fails the run (fail-closed) before the output leaves the agent — a cheap
+        "check before declaring success" rail. Not invoked for streaming runs."""
+        return
+
     def complete(
         self,
         messages: list[Message],
@@ -248,6 +275,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         response = self.llm.complete(messages, model_params)
         if self._active_ctx is not None:
             self._active_ctx.add_usage(response.usage, response.cost_usd)
+            self._count_turn()
             self._enforce_token_cap()
         return response
 
@@ -269,6 +297,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         result: StreamResult = yield from self.llm.stream_complete(messages, model_params)
         if self._active_ctx is not None:
             self._active_ctx.add_usage(result.usage, result.cost_usd)
+            self._count_turn()
             self._enforce_token_cap()
 
     @abstractmethod

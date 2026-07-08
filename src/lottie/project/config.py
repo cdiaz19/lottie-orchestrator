@@ -45,6 +45,7 @@ class AgentConfig(BaseModel):
     budget_usd: float | None = None  # per-agent cumulative spend cap; None = unlimited
     max_run_usd: float | None = None  # per-run cost ceiling + atomic-reservation amount (TOCTOU)
     max_run_tokens: int | None = None  # per-run token cap; None = unlimited
+    max_turns: int | None = None  # per-run LLM-completion cap (runaway-loop guard); None = off
     chat: ChatConfig | None = None  # None = agent not exposed on /v1/chat/completions
 
 
