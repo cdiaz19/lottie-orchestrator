@@ -30,6 +30,10 @@ def _rate_per_min() -> int:
 
 
 def _identity(request: Request) -> str:
+    # Identity is the PRESENTED (unvalidated) key or the client host. Known V1 limitations:
+    # with auth OFF a client can rotate the key header for fresh buckets, and with auth ON a
+    # flood of bogus keys grows the bucket map (no eviction). Acceptable for the per-process,
+    # minimum-viable limiter; a validated-identity + LRU/TTL sweep is a follow-up.
     auth = request.headers.get("authorization")
     if auth and auth.lower().startswith("bearer "):
         return "k:" + auth[len("bearer ") :].strip()

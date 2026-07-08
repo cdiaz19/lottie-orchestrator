@@ -23,7 +23,7 @@ from lottie.serve.errors import (
     OutputSecurityViolation,
     ThreadNotFound,
 )
-from lottie.serve.pagination import page_bounds
+from lottie.serve.pagination import page_bounds, slice_page
 from lottie.serve.rest_schema import (
     ResumeRequest,
     agent_detail_dict,
@@ -47,7 +47,7 @@ def rest_routes(svc: AgentService, root: Path) -> list[Route]:
 
     async def list_agents(request: Request) -> JSONResponse:
         limit, offset = page_bounds(request.query_params)
-        agents = svc.list_agents()[offset : offset + limit]
+        agents = slice_page(list(svc.list_agents()), limit, offset)
         return JSONResponse(agent_list_dict(agents))
 
     async def agent_detail(request: Request) -> JSONResponse:

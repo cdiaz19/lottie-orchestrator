@@ -46,8 +46,12 @@ class ApiKeyAuthMiddleware(BaseHTTPMiddleware):
         if not keys:  # unset -> auth disabled (open)
             return await call_next(request)
         token = _presented_token(request)
-        if token is not None and any(hmac.compare_digest(token, k) for k in keys):
-            return await call_next(request)
+        if token is not None:
+            # Evaluate EVERY comparison before deciding, so total time does not vary by which
+            # key matched (a short-circuiting any() would leak that via timing).
+            matches = [hmac.compare_digest(token, k) for k in keys]
+            if any(matches):
+                return await call_next(request)
         return json_error(
             401,
             "missing or invalid API key",

@@ -37,17 +37,17 @@ def _client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
 # --- pagination unit -------------------------------------------------------
 
 class TestPageBounds:
-    def test_defaults(self) -> None:
-        assert page_bounds({}) == (MAX_LIMIT, 0)
+    def test_default_limit_is_none_return_all(self) -> None:
+        assert page_bounds({}) == (None, 0)  # no silent truncation
 
     def test_parses_and_clamps(self) -> None:
         assert page_bounds({"limit": "5", "offset": "2"}) == (5, 2)
         assert page_bounds({"limit": "0"}) == (1, 0)  # clamp up to 1
         assert page_bounds({"limit": "9999"}) == (MAX_LIMIT, 0)  # clamp to ceiling
-        assert page_bounds({"offset": "-3"}) == (MAX_LIMIT, 0)  # clamp to 0
+        assert page_bounds({"offset": "-3"}) == (None, 0)  # limit absent -> all; offset clamped
 
-    def test_garbage_falls_back(self) -> None:
-        assert page_bounds({"limit": "abc", "offset": "x"}) == (MAX_LIMIT, 0)
+    def test_garbage_limit_returns_all(self) -> None:
+        assert page_bounds({"limit": "abc", "offset": "x"}) == (None, 0)
 
 
 # --- pagination over HTTP --------------------------------------------------
