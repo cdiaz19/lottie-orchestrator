@@ -37,6 +37,7 @@ def doctor() -> None:
     project_checks, project_warnings = _project_checks()
     checks.extend(project_checks)
     warnings.extend(project_warnings)
+    warnings.extend(_hardening_warnings())
 
     _render(Console(), checks, warnings)
     if any(not ok for _, ok, _ in checks):
@@ -68,6 +69,21 @@ def _project_checks() -> tuple[list[Check], list[str]]:
             present = bool(os.environ.get(env))
             checks.append((f"key: {env}", present, "set" if present else "MISSING"))
     return checks, warnings
+
+
+def _hardening_warnings() -> list[str]:
+    """Advisory checks for the v1 HTTP-hardening config (all opt-in; unset = off)."""
+    warnings: list[str] = []
+    if not os.environ.get("LOTTIE_API_KEYS"):
+        warnings.append(
+            "LOTTIE_API_KEYS unset — the HTTP transport (lottie serve --port) accepts "
+            "unauthenticated requests. Set it to require an API key in production."
+        )
+    if not os.environ.get("LOTTIE_RATE_LIMIT_PER_MIN"):
+        warnings.append(
+            "LOTTIE_RATE_LIMIT_PER_MIN unset — HTTP rate limiting is disabled."
+        )
+    return warnings
 
 
 def _render(console: Console, checks: list[Check], warnings: list[str]) -> None:

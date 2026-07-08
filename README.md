@@ -6,7 +6,7 @@ Provider-agnostic multi-agent AI orchestration framework with shared knowledge a
 
 > Works with Claude Code, Cursor, Codex, and any LLM. Swap Claude for GPT-4o with a single config change — no code changes, ever.
 
-**Status:** Phase 3 — Mesh Hardening shipped (`v0.4.0`): a `LangGraphEngine` (optional `[mesh]` extra) adds parallel fan-out, human-in-the-loop interrupt/resume, and checkpoint time-travel behind the engine ABC; the hand-rolled `LocalEngine` stays the zero-dep default. Phase 2 (Agent Mesh core, `v0.3.0`), Phases 0–1 (foundations, knowledge core), and the Phase-4 HTTP transports — MCP stdio plus an `lottie serve --port` HTTP API (OpenAI-compat `/v1/chat/completions` + Lottie REST `/v1/agents`, opt-in `[api]` extra) — all shipped. Governance has begun landing on `main`: a fail-closed serve-path `SecurityGate`, an immutable per-run audit trail (`lottie audit`), a declarative capability policy engine (allow/deny/escalate), per-agent cost budgets (a fail-closed cumulative circuit-breaker), and OpenTelemetry tracing (opt-in `[otel]` extra, one fail-open span per run, no-op by default).
+**Status:** **`v1.0.0` — "complete, secured, documented."** The V1 hardening epic is done: per-skill-call capability enforcement (rule 11), the input/output security gate on the `lottie run`/BaseAgent path (not just serve), a per-run token cap plus a TOCTOU-safe atomic cost reservation, HTTP auth + rate limiting + pagination on `lottie serve --port`, HITL `edited_input`-on-approve, and agentic-loop rails (`max_turns` + a `_verify` hook). No new capabilities — self-learning and A2A are V2. See `CHANGELOG.md`. Earlier: Phase 3 — Mesh Hardening (`v0.4.0`): a `LangGraphEngine` (optional `[mesh]` extra) adds parallel fan-out, human-in-the-loop interrupt/resume, and checkpoint time-travel behind the engine ABC; the hand-rolled `LocalEngine` stays the zero-dep default. Phase 2 (Agent Mesh core, `v0.3.0`), Phases 0–1 (foundations, knowledge core), and the Phase-4 HTTP transports — MCP stdio plus an `lottie serve --port` HTTP API (OpenAI-compat `/v1/chat/completions` + Lottie REST `/v1/agents`, opt-in `[api]` extra) — all shipped. Governance has begun landing on `main`: a fail-closed serve-path `SecurityGate`, an immutable per-run audit trail (`lottie audit`), a declarative capability policy engine (allow/deny/escalate), per-agent cost budgets (a fail-closed cumulative circuit-breaker), and OpenTelemetry tracing (opt-in `[otel]` extra, one fail-open span per run, no-op by default).
 
 ---
 
@@ -107,8 +107,9 @@ lottie serve --port 8000
 | `v0.3.0` | 2 — Agent Mesh | Supervisor→worker mesh, conditional routing, typed state (parallel/HITL/time-travel → Phase 3) | ✅ |
 | `v0.4.0` | 3 — Mesh Hardening | LangGraph backend, parallel fork/join, human-in-the-loop, time-travel (opt-in `[mesh]` extra) | ✅ |
 | _later_ | Governance | immutable audit trail (`lottie audit`) + capability policy engine (allow/deny/escalate) + per-agent cost budgets (fail-closed circuit-breaker) + OpenTelemetry tracing (opt-in `[otel]`, fail-open, no-op default) | ✅ audit + policy + cost + otel |
-| `v0.5.0` | 4 — Integration | MCP stdio + HTTP API (OpenAI-compat `/v1/chat/completions`, Lottie REST `/v1/agents`, durable mesh resume `/v1/agents/{name}/resume`); streaming next | ✅ MCP + OpenAI-compat + REST + resume |
-| `v1.0.0` | 5 — Public SDK | docs site, plugin system, demos | ◻ |
+| `v0.5.0` | 4 — Integration | MCP stdio + HTTP API (OpenAI-compat `/v1/chat/completions`, Lottie REST `/v1/agents`, durable mesh resume, SSE + real token streaming) | ✅ MCP + OpenAI-compat + REST + resume + streaming |
+| `v1.0.0` | V1 — Hardening | "complete, secured, documented": rule-11 capability enforcement, BaseAgent/CLI security gate, per-run token cap + TOCTOU-safe atomic cost reservation, HTTP auth/rate-limit/pagination, HITL edited_input, agentic hygiene (`max_turns` + `_verify`) | ✅ |
+| _later_ | V2 | self-learning (reflection), agent-to-agent (A2A), public SDK (docs site, plugin system, demos) | ◻ |
 
 It's verified in the open — see the [lottie-lab](https://github.com/cdiaz19/lottie-lab) round-by-round test harness.
 
