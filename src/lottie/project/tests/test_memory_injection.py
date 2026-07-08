@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import cast
 
 from pydantic import BaseModel
 
@@ -29,14 +30,17 @@ def _cfg(**kw: object) -> AgentConfig:
 
 def test_memory_disabled_keeps_null_client(tmp_path: Path) -> None:
     agent = instantiate_agent(
-        _Echo, llm=MockLLMProvider(["x"]), root=tmp_path, config=_cfg()
+        cast(type[BaseAgent[BaseModel, BaseModel]], _Echo),
+        llm=MockLLMProvider(["x"]),
+        root=tmp_path,
+        config=_cfg(),
     )
     assert isinstance(agent.memory, NullMemoryClient)
 
 
 def test_memory_enabled_injects_sqlite(tmp_path: Path) -> None:
     agent = instantiate_agent(
-        _Echo,
+        cast(type[BaseAgent[BaseModel, BaseModel]], _Echo),
         llm=MockLLMProvider(["x"]),
         root=tmp_path,
         config=_cfg(memory={"enabled": True, "backend": "sqlite"}),
