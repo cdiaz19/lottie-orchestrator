@@ -17,7 +17,7 @@ from typing import ClassVar, Literal
 
 from pydantic import BaseModel
 
-from lottie.core.metrics import Kind
+from lottie.core.metrics import Kind, RunContext
 from lottie.core.runnable import InstrumentedRunnable
 from lottie.core.security_gate import NullSecurityGate, SecurityGateProtocol
 from lottie.governance.audit import AuditLogger, build_audit_logger, hash_model
@@ -27,13 +27,19 @@ from lottie.governance.capability import (
     _active_capabilities,
 )
 from lottie.governance.cost import BudgetExceeded, CostGate, NullCostGate, TokenCapExceeded
+from lottie.governance.otel import run_span
 from lottie.governance.policy import NullPolicyGate, PolicyEscalation, PolicyGate, PolicyViolation
 from lottie.governance.schema import AuditRecord
 from lottie.llm import LLMProvider, LLMResponse, Message
 from lottie.llm.base import StreamResult
 from lottie.memory.base import MemoryClient, NullMemoryClient
 from lottie.memory.recall import RecalledMemory, render_as_data
-from lottie.memory.schema import MemoryQuery, MemoryTier
+from lottie.memory.reflection import (
+    RunTrajectory,
+    build_reflection_prompt,
+    parse_reflection,
+)
+from lottie.memory.schema import MemoryOrigin, MemoryQuery, MemoryTier
 
 
 class NotStreamable(RuntimeError):
@@ -87,6 +93,8 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         self._recall_namespace: str = ""
         self._recall_limit: int = 5
         self._recall_prefix: str = ""
+        self._reflect_enabled: bool = False
+        self._reflect_namespace: str = ""
 
     def set_policy(self, gate: PolicyGate) -> None:
         """Attach a policy gate (called by instantiate_agent for CLI/serve runs)."""
@@ -121,6 +129,11 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         self._recall_namespace = namespace
         self._recall_limit = limit
 
+    def set_reflect(self, *, enabled: bool, namespace: str) -> None:
+        """Enable post-run reflexive write-back for this agent (via instantiate_agent)."""
+        self._reflect_enabled = enabled
+        self._reflect_namespace = namespace
+
     def _load_recall(self) -> None:
         """Best-effort: stash a render_as_data block of recalled semantic notes.
 
@@ -142,6 +155,56 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         except Exception as exc:  # recall is best-effort — never break the run
             warnings.warn(f"recall failed, proceeding without context: {exc}", stacklevel=2)
             self._recall_prefix = ""
+
+    def _maybe_reflect(self, data: InputT, output: OutputT) -> None:
+        """Best-effort: distill the finished run into memory lessons via the gateway.
+
+        Routes the reflection LLM call through self.complete() with a RunContext primed
+        to the run's spent tokens, so the per-run token cap enforces (skip-when-exhausted).
+        Never raises — reflection failure must not fail the already-successful run.
+        """
+        if not self._reflect_enabled:
+            return
+        m = self.last_metrics
+        used = (m.input_tokens + m.output_tokens) if m is not None else 0
+        if self._max_run_tokens is not None and used >= self._max_run_tokens:
+            warnings.warn("reflection skipped: run token cap reached", stacklevel=2)
+            return
+        self._recall_prefix = ""  # reflection gets no recalled context of its own
+        trajectory = RunTrajectory(
+            task=data.model_dump_json(),
+            outcome=output.model_dump_json(),
+            success=True,
+            input_tokens=m.input_tokens if m is not None else 0,
+            output_tokens=m.output_tokens if m is not None else 0,
+            cost_usd=m.cost_usd if m is not None else 0.0,
+            latency_ms=m.latency_ms if m is not None else 0.0,
+        )
+        ctx = RunContext()
+        ctx.input_tokens = used  # prime so _enforce_token_cap counts cumulatively
+        ctx.cost_usd = m.cost_usd if m is not None else 0.0
+        self._active_ctx = ctx
+        try:
+            with run_span(f"{self.name}.reflect", self.kind):
+                response = self.complete(build_reflection_prompt(trajectory))
+                deltas = parse_reflection(response.content)
+                if deltas:
+                    # lazy import: avoids a core<->memory.agent import cycle
+                    from lottie.memory.agent import MemoryAgent
+
+                    gateway = MemoryAgent(llm=self.llm, memory=self.memory, audit=self._audit)
+                    gateway.apply(
+                        deltas,
+                        namespace=self._reflect_namespace,
+                        source_agent=self.name,
+                        origin=MemoryOrigin.REFLECTION,
+                    )
+        except (TokenCapExceeded, TurnLimitExceeded) as exc:
+            warnings.warn(f"reflection skipped: {exc}", stacklevel=2)
+        except Exception as exc:  # best-effort — never fail the run
+            warnings.warn(f"reflection failed: {exc}", stacklevel=2)
+        finally:
+            self._active_ctx = None
 
     @property
     def provider(self) -> str | None:
@@ -187,6 +250,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
                 _active_capabilities.reset(cap_token)
             self._verify(data, output)  # agent post-condition (fail-closed) before success
             self._security.check_output(output.model_dump_json())  # rule 9: screen output
+            self._maybe_reflect(data, output)  # best-effort post-run reflexive write-back
             return output
         finally:
             self._recall_prefix = ""  # clear before the audit/settle finally block
