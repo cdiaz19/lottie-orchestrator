@@ -3,6 +3,7 @@
 from lottie.security.code_scanner import CodeSecurityScanSkill
 from lottie.security.injection_scanner import PromptInjectionScanSkill
 from lottie.security.input_sanitizer import InputSanitizerSkill
+from lottie.security.memory_gate import MemoryContentGate, MemoryContentRejected
 from lottie.security.output_validator import OutputValidationSkill
 from lottie.security.schema import (
     GateResult,
@@ -28,6 +29,8 @@ __all__ = [
     "InjectionScanInput",
     "InjectionScanOutput",
     "InputSanitizerSkill",
+    "MemoryContentGate",
+    "MemoryContentRejected",
     "OutputCheckInput",
     "OutputCheckOutput",
     "OutputValidationSkill",
