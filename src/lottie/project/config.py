@@ -34,12 +34,21 @@ class ChatConfig(BaseModel):
     output_field: str  # Output.<output_field> -> assistant message content
 
 
+class RecallConfig(BaseModel):
+    """Per-agent recall-injection config. Disabled by default."""
+
+    enabled: bool = False
+    limit: int = 5  # top-K semantic notes injected as data context
+
+
 class MemoryConfig(BaseModel):
     """Per-agent memory store config. Disabled by default (agent keeps NullMemoryClient)."""
 
     enabled: bool = False
     backend: Literal["sqlite", "null", "mock"] = "sqlite"
     path: str = ".lottie/memory.db"  # resolved relative to the project root
+    namespace: str | None = None  # memory namespace; None → resolved to the agent name
+    recall: RecallConfig = RecallConfig()
 
 
 class AgentConfig(BaseModel):
