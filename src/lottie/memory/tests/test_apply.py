@@ -111,3 +111,43 @@ def test_update_missing_target_is_rejected_not_raised() -> None:
     )
     assert result.applied_ids == []
     assert len(result.rejected) == 1
+
+
+def test_readd_after_deprecate_creates_new_active_record() -> None:
+    mem, audit = MockMemoryClient(), _RecordingAudit()
+    agent = _agent(mem, audit)
+    first = agent.apply(
+        [MemoryDelta(op=DeltaOp.ADD, content="c")], namespace="ns", source_agent="X"
+    )
+    deprecated_id = first.applied_ids[0]
+    agent.apply(
+        [MemoryDelta(op=DeltaOp.DEPRECATE, target_id=deprecated_id)],
+        namespace="ns",
+        source_agent="X",
+    )
+    second = agent.apply(
+        [MemoryDelta(op=DeltaOp.ADD, content="c")], namespace="ns", source_agent="X"
+    )
+    new_id = second.applied_ids[0]
+    assert new_id != deprecated_id                # a fresh record, not folded into the dead one
+    hits = mem.recall(MemoryQuery(text="", namespace="ns")).hits
+    active = [h for h in hits if h.record.status is MemoryStatus.ACTIVE and h.record.content == "c"]
+    assert len(active) == 1
+    assert active[0].record.memory_id != deprecated_id
+
+
+def test_tagonly_update_preserves_content() -> None:
+    mem, audit = MockMemoryClient(), _RecordingAudit()
+    agent = _agent(mem, audit)
+    add = agent.apply(
+        [MemoryDelta(op=DeltaOp.ADD, content="orig")], namespace="ns", source_agent="X"
+    )
+    mid = add.applied_ids[0]
+    agent.apply(
+        [MemoryDelta(op=DeltaOp.UPDATE, target_id=mid, tags=["new"])],
+        namespace="ns",
+        source_agent="X",
+    )
+    record = next(r for r in mem.records if r.memory_id == mid)
+    assert record.content == "orig"
+    assert "new" in record.tags

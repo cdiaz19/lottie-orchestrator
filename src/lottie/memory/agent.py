@@ -129,7 +129,7 @@ class MemoryAgent(BaseAgent[ReflectionInput, ReflectionResult]):
                     continue
                 rec = self.memory.update(
                     delta.target_id,
-                    MemoryPatch(content=delta.content, tags=delta.tags or None),
+                    MemoryPatch(content=delta.content or None, tags=delta.tags or None),
                 )
                 self._write_apply_audit(source_agent, delta.content, "memory_write", None)
                 result.applied_ids.append(rec.memory_id or delta.target_id)
@@ -172,7 +172,7 @@ class MemoryAgent(BaseAgent[ReflectionInput, ReflectionResult]):
     def _find_by_content(self, namespace: str, content: str) -> MemoryRecord | None:
         hits = self.memory.recall(MemoryQuery(text="", namespace=namespace, limit=1000)).hits
         for hit in hits:
-            if hit.record.content == content:
+            if hit.record.content == content and hit.record.status is MemoryStatus.ACTIVE:
                 return hit.record
         return None
 
