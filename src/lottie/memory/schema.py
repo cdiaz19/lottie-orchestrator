@@ -35,6 +35,14 @@ class MemoryStatus(StrEnum):
     DEPRECATED = "deprecated"
 
 
+class DeltaOp(StrEnum):
+    """The three incremental playbook operations (ACE-style; never wholesale rewrite)."""
+
+    ADD = "add"              # insert a new note (dedup-folded on exact-content match)
+    UPDATE = "update"        # patch an existing note by target_id
+    DEPRECATE = "deprecate"  # soft-retire an existing note by target_id
+
+
 class MemoryRecord(BaseModel):
     """A single stored memory."""
 
@@ -74,6 +82,25 @@ class MemoryPatch(BaseModel):
     tags: list[str] | None = None
     status: MemoryStatus | None = None
     metadata: dict[str, str] | None = None
+
+
+class MemoryDelta(BaseModel):
+    """One playbook edit emitted by a Reflector (S2) and applied by MemoryAgent.
+
+    ADD uses content (+tags); UPDATE/DEPRECATE target an existing note by target_id.
+    """
+
+    op: DeltaOp
+    content: str = ""
+    tags: list[str] = []
+    target_id: str | None = None
+
+
+class ApplyResult(BaseModel):
+    """Outcome of MemoryAgent.apply. `rejected` holds short reasons — never content."""
+
+    applied_ids: list[str] = []
+    rejected: list[str] = []
 
 
 class MemoryHit(BaseModel):
