@@ -32,6 +32,8 @@ from lottie.governance.schema import AuditRecord
 from lottie.llm import LLMProvider, LLMResponse, Message
 from lottie.llm.base import StreamResult
 from lottie.memory.base import MemoryClient, NullMemoryClient
+from lottie.memory.recall import RecalledMemory, render_as_data
+from lottie.memory.schema import MemoryQuery, MemoryTier
 
 
 class NotStreamable(RuntimeError):
@@ -81,6 +83,10 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         self._security: SecurityGateProtocol = NullSecurityGate()
         self._max_run_tokens: int | None = None
         self._max_turns: int | None = None
+        self._recall_enabled: bool = False
+        self._recall_namespace: str = ""
+        self._recall_limit: int = 5
+        self._recall_prefix: str = ""
 
     def set_policy(self, gate: PolicyGate) -> None:
         """Attach a policy gate (called by instantiate_agent for CLI/serve runs)."""
@@ -108,6 +114,34 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         """Set per-run limits (None = unlimited): token cap + LLM-completion (turn) cap."""
         self._max_run_tokens = max_run_tokens
         self._max_turns = max_turns
+
+    def set_recall(self, *, enabled: bool, namespace: str, limit: int) -> None:
+        """Enable recall-as-data injection for this agent (via instantiate_agent)."""
+        self._recall_enabled = enabled
+        self._recall_namespace = namespace
+        self._recall_limit = limit
+
+    def _load_recall(self) -> None:
+        """Best-effort: stash a render_as_data block of recalled semantic notes.
+
+        A read failure is non-fatal (fail-open) — the run proceeds without context.
+        """
+        self._recall_prefix = ""
+        if not self._recall_enabled:
+            return
+        try:
+            result = self.memory.recall(
+                MemoryQuery(
+                    text="",
+                    namespace=self._recall_namespace,
+                    tier=MemoryTier.SEMANTIC,
+                    limit=self._recall_limit,
+                )
+            )
+            self._recall_prefix = render_as_data(RecalledMemory.from_result(result))
+        except Exception as exc:  # recall is best-effort — never break the run
+            warnings.warn(f"recall failed, proceeding without context: {exc}", stacklevel=2)
+            self._recall_prefix = ""
 
     @property
     def provider(self) -> str | None:
@@ -139,6 +173,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         capability `_execute` window, so the gate's own security skills stay exempt (S1)."""
         self._security.check_input(data.model_dump_json())  # rule 8: screen input first
         handle = self._pre_run_gates(data)  # policy + atomic budget reservation
+        self._load_recall()  # best-effort recall-as-data before _execute
         token = _audit_depth.set(_depth() + 1)
         is_root = _depth() == 1
         output: OutputT | None = None
@@ -154,6 +189,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
             self._security.check_output(output.model_dump_json())  # rule 9: screen output
             return output
         finally:
+            self._recall_prefix = ""  # clear before the audit/settle finally block
             try:
                 self._write_audit(data, output, is_root)
             finally:
@@ -275,7 +311,13 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         messages: list[Message],
         model_params: Mapping[str, object] | None = None,
     ) -> LLMResponse:
-        """Run an LLM completion, accumulating tokens/cost into the active run."""
+        """Run an LLM completion, accumulating tokens/cost into the active run.
+
+        When recall is enabled and produced context, a leading data-framed system
+        message is prepended (recall-as-data; never instructions).
+        """
+        if self._recall_prefix:
+            messages = [Message(role="system", content=self._recall_prefix), *messages]
         response = self.llm.complete(messages, model_params)
         if self._active_ctx is not None:
             self._active_ctx.add_usage(response.usage, response.cost_usd)
