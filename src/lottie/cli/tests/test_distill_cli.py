@@ -75,3 +75,5 @@ def test_distill_secret_in_template_rejected(
     )
     result = runner.invoke(app, ["distill", "digest", "--namespace", "ns"])
     assert result.exit_code == 2
+    # security property: a secret-bearing template must NEVER land on disk
+    assert not (tmp_path / "skills" / "draft" / "digest_distilled").exists()
