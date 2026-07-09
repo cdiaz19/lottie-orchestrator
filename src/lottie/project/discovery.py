@@ -247,6 +247,11 @@ def instantiate_agent(
                 namespace=config.memory.namespace or agent.name,
                 limit=config.memory.recall.limit,
             )
+        if config.memory.reflect.enabled:
+            agent.set_reflect(
+                enabled=True,
+                namespace=config.memory.namespace or agent.name,
+            )
     # Rules 8 & 9: input/output security gate on the BaseAgent chokepoint. Attached only
     # when a caller injects one (the CLI passes serve.security.SecurityGate); serve leaves
     # it None and gates externally in AgentService, so no path is gated twice.
