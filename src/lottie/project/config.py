@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 import typer
 import yaml
@@ -33,6 +34,14 @@ class ChatConfig(BaseModel):
     output_field: str  # Output.<output_field> -> assistant message content
 
 
+class MemoryConfig(BaseModel):
+    """Per-agent memory store config. Disabled by default (agent keeps NullMemoryClient)."""
+
+    enabled: bool = False
+    backend: Literal["sqlite", "null", "mock"] = "sqlite"
+    path: str = ".lottie/memory.db"  # resolved relative to the project root
+
+
 class AgentConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -46,6 +55,7 @@ class AgentConfig(BaseModel):
     max_run_usd: float | None = None  # per-run cost ceiling + atomic-reservation amount (TOCTOU)
     max_run_tokens: int | None = None  # per-run token cap; None = unlimited
     max_turns: int | None = None  # per-run LLM-completion cap (runaway-loop guard); None = off
+    memory: MemoryConfig = MemoryConfig()
     chat: ChatConfig | None = None  # None = agent not exposed on /v1/chat/completions
 
 

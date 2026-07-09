@@ -20,6 +20,21 @@ class MemoryTier(StrEnum):
     PROCEDURAL = "procedural"  # T3 — config/rules
 
 
+class MemoryOrigin(StrEnum):
+    """How a record entered the store (provenance root)."""
+
+    REFLECTION = "reflection"  # written by the post-run Reflector (S2)
+    DISTILL = "distill"        # written during skill distillation (S3)
+    MANUAL = "manual"          # written directly / by MemoryAgent consolidation
+
+
+class MemoryStatus(StrEnum):
+    """Lifecycle. DEPRECATE is a soft delete — records are never dropped by the gateway."""
+
+    ACTIVE = "active"
+    DEPRECATED = "deprecated"
+
+
 class MemoryRecord(BaseModel):
     """A single stored memory."""
 
@@ -29,6 +44,13 @@ class MemoryRecord(BaseModel):
     tags: list[str] = []
     metadata: dict[str, str] = {}
     memory_id: str | None = None  # assigned by MemoryClient.remember
+    # --- provenance + lifecycle (V2 S0; enforced by the gateway in S1) ---
+    origin: MemoryOrigin = MemoryOrigin.MANUAL
+    source_agent: str | None = None
+    run_id: str | None = None
+    status: MemoryStatus = MemoryStatus.ACTIVE
+    created_at: float | None = None  # epoch seconds; assigned by the store on write
+    updated_at: float | None = None  # epoch seconds; refreshed by the store on update
 
 
 class MemoryQuery(BaseModel):
@@ -39,6 +61,19 @@ class MemoryQuery(BaseModel):
     tier: MemoryTier | None = None  # None = any tier
     tags: list[str] = []            # match-any
     limit: int = 10
+
+
+class MemoryPatch(BaseModel):
+    """Incremental update to a stored record. All fields optional; None = leave as-is.
+
+    A patch NEVER replaces a whole record — only the supplied fields change. This
+    is the ACE 'structured incremental update' primitive (never wholesale rewrite).
+    """
+
+    content: str | None = None
+    tags: list[str] | None = None
+    status: MemoryStatus | None = None
+    metadata: dict[str, str] | None = None
 
 
 class MemoryHit(BaseModel):

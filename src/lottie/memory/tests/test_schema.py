@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from lottie.memory.schema import (
     MemoryHit,
+    MemoryOrigin,
+    MemoryPatch,
     MemoryQuery,
     MemoryRecord,
+    MemoryStatus,
     MemoryTier,
     RecallResult,
     ReflectionInput,
@@ -57,3 +60,35 @@ def test_reflection_models() -> None:
     assert out.notes == []
     assert out.consolidated_count == 0
     assert out.written_ids == []
+
+
+def test_record_defaults_are_backward_compatible() -> None:
+    # Existing callers construct with only content+namespace; new fields default.
+    rec = MemoryRecord(content="hello", namespace="ns")
+    assert rec.origin is MemoryOrigin.MANUAL
+    assert rec.status is MemoryStatus.ACTIVE
+    assert rec.source_agent is None
+    assert rec.run_id is None
+    assert rec.created_at is None
+    assert rec.updated_at is None
+
+
+def test_record_accepts_provenance() -> None:
+    rec = MemoryRecord(
+        content="c",
+        namespace="ns",
+        origin=MemoryOrigin.REFLECTION,
+        source_agent="Digest",
+        run_id="run-1",
+    )
+    assert rec.origin is MemoryOrigin.REFLECTION
+    assert rec.source_agent == "Digest"
+
+
+def test_patch_is_all_optional() -> None:
+    empty = MemoryPatch()
+    assert empty.content is None and empty.tags is None
+    assert empty.status is None and empty.metadata is None
+    patch = MemoryPatch(content="new", status=MemoryStatus.DEPRECATED)
+    assert patch.content == "new"
+    assert patch.status is MemoryStatus.DEPRECATED
