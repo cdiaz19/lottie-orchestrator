@@ -53,3 +53,35 @@ def test_set_memory_setter() -> None:
     store = SqliteMemoryClient(Path("/tmp/does-not-persist-here.db"))
     agent.set_memory(store)
     assert agent.memory is store
+
+
+def test_recall_wired_when_enabled(tmp_path: Path) -> None:
+    agent = instantiate_agent(
+        cast(type[BaseAgent[BaseModel, BaseModel]], _Echo),
+        llm=MockLLMProvider(["x"]),
+        root=tmp_path,
+        config=_cfg(memory={"enabled": True, "recall": {"enabled": True, "limit": 2}}),
+    )
+    assert agent._recall_enabled is True
+    assert agent._recall_limit == 2
+    assert agent._recall_namespace == agent.name  # defaulted to agent name
+
+
+def test_recall_namespace_explicit(tmp_path: Path) -> None:
+    agent = instantiate_agent(
+        cast(type[BaseAgent[BaseModel, BaseModel]], _Echo),
+        llm=MockLLMProvider(["x"]),
+        root=tmp_path,
+        config=_cfg(memory={"enabled": True, "namespace": "lessons", "recall": {"enabled": True}}),
+    )
+    assert agent._recall_namespace == "lessons"
+
+
+def test_recall_off_when_memory_disabled(tmp_path: Path) -> None:
+    agent = instantiate_agent(
+        cast(type[BaseAgent[BaseModel, BaseModel]], _Echo),
+        llm=MockLLMProvider(["x"]),
+        root=tmp_path,
+        config=_cfg(memory={"enabled": False, "recall": {"enabled": True}}),
+    )
+    assert agent._recall_enabled is False
