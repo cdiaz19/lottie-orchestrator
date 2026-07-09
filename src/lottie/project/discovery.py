@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib
 import sys
+import warnings
 from pathlib import Path
 from types import ModuleType
 from typing import Literal
@@ -248,6 +249,12 @@ def instantiate_agent(
                 limit=config.memory.recall.limit,
             )
         if config.memory.reflect.enabled:
+            if config.max_run_tokens is None:
+                warnings.warn(
+                    f"agent {agent.name!r}: memory.reflect is enabled without max_run_tokens — "
+                    "reflection LLM spend is unbounded per run. Set max_run_tokens to bound it.",
+                    stacklevel=2,
+                )
             agent.set_reflect(
                 enabled=True,
                 namespace=config.memory.namespace or agent.name,

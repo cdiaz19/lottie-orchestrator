@@ -171,20 +171,20 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
             warnings.warn("reflection skipped: run token cap reached", stacklevel=2)
             return
         self._recall_prefix = ""  # reflection gets no recalled context of its own
-        trajectory = RunTrajectory(
-            task=data.model_dump_json(),
-            outcome=output.model_dump_json(),
-            success=True,
-            input_tokens=m.input_tokens if m is not None else 0,
-            output_tokens=m.output_tokens if m is not None else 0,
-            cost_usd=m.cost_usd if m is not None else 0.0,
-            latency_ms=m.latency_ms if m is not None else 0.0,
-        )
-        ctx = RunContext()
-        ctx.input_tokens = used  # prime so _enforce_token_cap counts cumulatively
-        ctx.cost_usd = m.cost_usd if m is not None else 0.0
-        self._active_ctx = ctx
         try:
+            trajectory = RunTrajectory(
+                task=data.model_dump_json(),
+                outcome=output.model_dump_json(),
+                success=True,
+                input_tokens=m.input_tokens if m is not None else 0,
+                output_tokens=m.output_tokens if m is not None else 0,
+                cost_usd=m.cost_usd if m is not None else 0.0,
+                latency_ms=m.latency_ms if m is not None else 0.0,
+            )
+            ctx = RunContext()
+            ctx.input_tokens = used  # prime so _enforce_token_cap counts cumulatively
+            ctx.cost_usd = m.cost_usd if m is not None else 0.0
+            self._active_ctx = ctx
             with run_span(f"{self.name}.reflect", self.kind):
                 response = self.complete(build_reflection_prompt(trajectory))
                 deltas = parse_reflection(response.content)

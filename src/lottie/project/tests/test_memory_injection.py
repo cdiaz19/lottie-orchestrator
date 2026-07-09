@@ -1,3 +1,4 @@
+import warnings
 from pathlib import Path
 from typing import cast
 
@@ -106,3 +107,29 @@ def test_reflect_off_when_memory_disabled(tmp_path: Path) -> None:
         config=_cfg(memory={"enabled": False, "reflect": {"enabled": True}}),
     )
     assert agent._reflect_enabled is False
+
+
+def test_reflect_without_token_cap_warns(tmp_path: Path) -> None:
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        instantiate_agent(
+            cast(type[BaseAgent[BaseModel, BaseModel]], _Echo),
+            llm=MockLLMProvider(["x"]),
+            root=tmp_path,
+            config=_cfg(memory={"enabled": True, "reflect": {"enabled": True}}),
+        )
+    assert any("max_run_tokens" in str(w.message) for w in caught)
+
+
+def test_reflect_with_token_cap_no_warn(tmp_path: Path) -> None:
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        instantiate_agent(
+            cast(type[BaseAgent[BaseModel, BaseModel]], _Echo),
+            llm=MockLLMProvider(["x"]),
+            root=tmp_path,
+            config=_cfg(
+                max_run_tokens=1000, memory={"enabled": True, "reflect": {"enabled": True}}
+            ),
+        )
+    assert not any("max_run_tokens" in str(w.message) for w in caught)
