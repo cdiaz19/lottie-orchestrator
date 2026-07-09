@@ -45,7 +45,7 @@ def render_as_data(recalled: RecalledMemory) -> str:
         return ""
     lines = [_HEADER]
     for record in recalled.records:
-        provenance = f"{record.origin.value}/{record.source_agent or 'unknown'}"
+        provenance = _defang(f"{record.origin.value}/{record.source_agent or 'unknown'}")
         lines.append(f"- ({provenance}) {_defang(record.content)}")
     lines.append(_FOOTER)
     return "\n".join(lines)
