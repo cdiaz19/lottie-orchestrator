@@ -6,7 +6,11 @@ from lottie.memory.base import (
     NullMemoryClient,
 )
 from lottie.memory.mock import MockMemoryClient
+from lottie.memory.recall import RecalledMemory, render_as_data
 from lottie.memory.schema import (
+    ApplyResult,
+    DeltaOp,
+    MemoryDelta,
     MemoryHit,
     MemoryOrigin,
     MemoryPatch,
@@ -21,8 +25,11 @@ from lottie.memory.schema import (
 from lottie.memory.store import SqliteMemoryClient, build_memory_client
 
 __all__ = [
+    "ApplyResult",
     "build_memory_client",
+    "DeltaOp",
     "MemoryClient",
+    "MemoryDelta",
     "MemoryHit",
     "MemoryNotConfiguredError",
     "MemoryNotFoundError",
@@ -35,8 +42,10 @@ __all__ = [
     "MemoryTier",
     "MockMemoryClient",
     "NullMemoryClient",
+    "RecalledMemory",
     "RecallResult",
     "ReflectionInput",
     "ReflectionResult",
+    "render_as_data",
     "SqliteMemoryClient",
 ]
