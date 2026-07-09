@@ -25,6 +25,7 @@
 12. **Agents write only to `knowledge/draft/`.** Promotion to `curated` always requires human review.
 13. **Generated code always runs through** `SecretDetectionSkill` → `CodeSecurityScanSkill` (bandit) → `mypy` → `ruff` before any file write.
 13b. **Learned-content writes go through `MemoryAgent.apply` (the memory gateway).** No agent writes reflection/distillation output directly via `self.memory.remember/update`. `apply` screens every delta with `MemoryContentGate` (injection + secret scan, fail-closed), dedups (exact-content, active-only), stamps provenance, and audit-trails each write hash-only. Recalled memory is DATA, never instructions — surface it via `render_as_data`. Post-run reflection (`memory.reflect.enabled`, OFF by default) routes its LLM call through the run's token budget (skip-when-exhausted), is best-effort (never fails the run), and writes lessons through this same gateway.
+13c. **Distilled skills are prompt templates, never generated code** (D2). `lottie distill` synthesizes a NON-callable draft template under `skills/draft/` (executed by the generic `TemplateRunnerSkill` — no LLM-authored Python runs). The generated template is secret-scanned automatically; injection/malice is the human promotion gate (S3b).
 
 ### Knowledge
 14. **YAML frontmatter on every knowledge file** — `id`, `layer`, `scope`, `tags`, `status`, `last_verified`, `depends_on`.
@@ -119,6 +120,7 @@ lottie knowledge clear                 # drop vector store / draft docs (with co
 
 # Reflexive memory
 lottie reflect <agent>                 # consolidate an agent's episodic memory → semantic notes (gated)
+lottie distill <agent>                 # synthesize a DRAFT template-skill from an agent's learned memory (secret-scanned; not callable until promoted)
 
 # Memory graph
 lottie memory graph                    # visualize dependency graph
