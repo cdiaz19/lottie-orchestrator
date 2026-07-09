@@ -11,6 +11,7 @@ import typer
 from lottie.cli.audit import audit
 from lottie.cli.benchmark import benchmark_app
 from lottie.cli.create import create_app
+from lottie.cli.distill import distill
 from lottie.cli.doctor import doctor
 from lottie.cli.init import init
 from lottie.cli.knowledge import knowledge_app
@@ -44,6 +45,7 @@ app.add_typer(list_app, name="list")
 app.add_typer(memory_app, name="memory")
 app.add_typer(mesh_app, name="mesh")
 app.add_typer(inspect_app, name="inspect")
+app.command("distill")(distill)
 app.command("reflect")(reflect)
 app.command("run")(run)
 app.command("serve")(serve)
