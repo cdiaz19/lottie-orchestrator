@@ -81,21 +81,16 @@ class MemoryAgent(BaseAgent[ReflectionInput, ReflectionResult]):
             ]
         )
         notes = [line.strip() for line in response.content.splitlines() if line.strip()]
-        written = [
-            self.memory.remember(
-                MemoryRecord(
-                    content=note,
-                    tier=MemoryTier.SEMANTIC,
-                    namespace=data.namespace,
-                    tags=["reflection"],
-                )
-            )
-            for note in notes
-        ]
+        result = self.apply(
+            [MemoryDelta(op=DeltaOp.ADD, content=note, tags=["reflection"]) for note in notes],
+            namespace=data.namespace,
+            source_agent=self.name,
+            origin=MemoryOrigin.REFLECTION,
+        )
         return ReflectionResult(
             notes=notes,
             consolidated_count=len(episodic),
-            written_ids=written,
+            written_ids=result.applied_ids,
         )
 
     def apply(
