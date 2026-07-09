@@ -77,3 +77,23 @@ def test_distill_secret_in_template_rejected(
     assert result.exit_code == 2
     # security property: a secret-bearing template must NEVER land on disk
     assert not (tmp_path / "skills" / "draft" / "digest_distilled").exists()
+
+
+def test_distill_rejects_path_traversal_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _project(tmp_path)
+    monkeypatch.chdir(root)
+    monkeypatch.setattr(
+        "lottie.cli.distill.build_provider",
+        lambda _m: MockLLMProvider(["Answer about {topic}."]),
+    )
+    monkeypatch.setattr(
+        "lottie.cli.distill.build_memory_client", lambda *_a, **_k: _seeded_memory()
+    )
+    result = runner.invoke(
+        app, ["distill", "digest", "--namespace", "ns", "--skill-name", "../../evil"]
+    )
+    assert result.exit_code != 0
+    assert not (tmp_path.parent / "evil").exists()
+    assert not (root / "skills" / "draft" / "evil").exists()

@@ -54,6 +54,10 @@ def distill(
         raise typer.Exit(code=2)
 
     sname = skill_name or f"{name}_distilled"
+    if not sname.replace("_", "").replace("-", "").isalnum():
+        raise typer.BadParameter(
+            f"--skill-name must be alphanumeric (with _ or -), got {sname!r}"
+        )
     run_ids = sorted({h.record.run_id for h in hits if h.record.run_id})
     spec = DistilledSkillSpec(name=sname, template=template, slots=extract_slots(template))
     provenance = DistillProvenance(source_agent=name, namespace=ns, source_run_ids=run_ids)
