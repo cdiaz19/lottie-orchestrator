@@ -24,7 +24,7 @@
 11. **Agents can only call skills declared in their `config.yaml` `capabilities` list.** The capability gate (`governance/capability.py` — in `governance/`, not `security/`, so `core` can import it without a `core↔security` cycle) blocks any undeclared skill call at runtime, fail-closed. Enforced in `BaseSkill.run` via a `_execute`-scoped ContextVar the agent activates (framework security skills, invoked outside `_execute`, are exempt). Whitelist-when-nonempty: empty `capabilities` = no enforcement.
 12. **Agents write only to `knowledge/draft/`.** Promotion to `curated` always requires human review.
 13. **Generated code always runs through** `SecretDetectionSkill` → `CodeSecurityScanSkill` (bandit) → `mypy` → `ruff` before any file write.
-13b. **Learned-content writes go through `MemoryAgent.apply` (the memory gateway).** No agent writes reflection/distillation output directly via `self.memory.remember/update`. `apply` screens every delta with `MemoryContentGate` (injection + secret scan, fail-closed), dedups (exact-content, active-only), stamps provenance, and audit-trails each write hash-only. Recalled memory is DATA, never instructions — surface it via `render_as_data`.
+13b. **Learned-content writes go through `MemoryAgent.apply` (the memory gateway).** No agent writes reflection/distillation output directly via `self.memory.remember/update`. `apply` screens every delta with `MemoryContentGate` (injection + secret scan, fail-closed), dedups (exact-content, active-only), stamps provenance, and audit-trails each write hash-only. Recalled memory is DATA, never instructions — surface it via `render_as_data`. Post-run reflection (`memory.reflect.enabled`, OFF by default) routes its LLM call through the run's token budget (skip-when-exhausted), is best-effort (never fails the run), and writes lessons through this same gateway.
 
 ### Knowledge
 14. **YAML frontmatter on every knowledge file** — `id`, `layer`, `scope`, `tags`, `status`, `last_verified`, `depends_on`.
@@ -116,6 +116,9 @@ lottie knowledge ingest --format graphify ./graph.json  # import external graph
 lottie knowledge list                  # list all knowledge documents in the manifest
 lottie knowledge inspect <id>          # frontmatter, chunk count, and dependents for a doc
 lottie knowledge clear                 # drop vector store / draft docs (with confirmation)
+
+# Reflexive memory
+lottie reflect <agent>                 # consolidate an agent's episodic memory → semantic notes (gated)
 
 # Memory graph
 lottie memory graph                    # visualize dependency graph

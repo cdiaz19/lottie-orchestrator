@@ -42,3 +42,20 @@ def test_memory_config_recall_from_dict() -> None:
     assert cfg.memory.namespace == "lessons"
     assert cfg.memory.recall.enabled is True
     assert cfg.memory.recall.limit == 3
+
+
+def test_memory_config_reflect_defaults_off() -> None:
+    from lottie.project.config import AgentConfig, ReflectConfig
+
+    cfg = AgentConfig(provider="mock")
+    assert isinstance(cfg.memory.reflect, ReflectConfig)
+    assert cfg.memory.reflect.enabled is False
+
+
+def test_memory_config_reflect_from_dict() -> None:
+    from lottie.project.config import AgentConfig
+
+    cfg = AgentConfig.model_validate(
+        {"provider": "mock", "memory": {"enabled": True, "reflect": {"enabled": True}}}
+    )
+    assert cfg.memory.reflect.enabled is True

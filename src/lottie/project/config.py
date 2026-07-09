@@ -41,6 +41,12 @@ class RecallConfig(BaseModel):
     limit: int = 5  # top-K semantic notes injected as data context
 
 
+class ReflectConfig(BaseModel):
+    """Per-agent post-run reflection config. Disabled by default."""
+
+    enabled: bool = False
+
+
 class MemoryConfig(BaseModel):
     """Per-agent memory store config. Disabled by default (agent keeps NullMemoryClient)."""
 
@@ -49,6 +55,7 @@ class MemoryConfig(BaseModel):
     path: str = ".lottie/memory.db"  # resolved relative to the project root
     namespace: str | None = None  # memory namespace; None → resolved to the agent name
     recall: RecallConfig = RecallConfig()
+    reflect: ReflectConfig = ReflectConfig()
 
 
 class AgentConfig(BaseModel):
