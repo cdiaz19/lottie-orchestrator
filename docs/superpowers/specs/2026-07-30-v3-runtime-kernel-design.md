@@ -14,9 +14,39 @@
 S4 learning-delta eval, S5 long-running harness, S6 release + red-team outstanding. Two
 concurrent epics would both touch `core/base_agent.py` and conflict continuously.
 
-One forward-looking constraint on V2: **S5 ships context compaction with an E4
-Context-Compiler seam in mind** (compaction should be expressible as a context transform,
-not as bespoke logic welded into `BaseAgent`). Note it in the S5 spec.
+### 1.1 The one constraint V3 places on V2 S5
+
+V2 S5 ships context compaction. E4 (Context Compiler, v3.1) must be able to **absorb** it
+rather than rewrite it, so S5 builds compaction as a **pure function with a single call
+site**:
+
+```python
+# memory/compaction.py — pure, no BaseAgent state
+def compact(
+    messages: list[Message],
+    *,
+    max_tokens: int,
+    keep_recent: int,
+    pinned: Callable[[Message], bool],       # load-bearing messages survive
+    summarize: Callable[[list[Message]], str],  # injected, not self.complete
+) -> list[Message]: ...
+```
+
+`BaseAgent.complete()` calls it in exactly one place. E4 later moves the *call site* into
+the compiler (`CompactionTransform.apply` delegates to `compact`); the function itself is
+never touched. "Pure function over messages" stays correct regardless of what E4's compiler
+turns out to look like, so no V3 abstraction has to be guessed at during V2.
+
+Three constraints S5 must satisfy **for its own correctness**, independent of V3:
+
+1. **No recursion.** The summarization LLM call must go through `self.llm.complete`, not
+   `self.complete` — the latter re-enters compaction unboundedly. Usage is hand-accrued into
+   `_active_ctx`, the pattern `_maybe_reflect` already uses (`base_agent.py:184-189`).
+2. **Load-bearing content is pinned.** Compaction must never drop the recall system message
+   or the task. Recall-as-data is a security contract (V2 S2a); silently compacting it away
+   degrades the anti-poisoning story with no signal. Hence the explicit `pinned` predicate.
+3. **Injected `summarize` means zero-LLM unit tests.** Compaction logic is testable with a
+   stub summarizer — no `MockLLMProvider` wiring needed for the boundary cases.
 
 ---
 

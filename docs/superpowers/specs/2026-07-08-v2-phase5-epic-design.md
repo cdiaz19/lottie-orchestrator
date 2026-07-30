@@ -104,6 +104,18 @@ re-distill bumps version. **No Python authored or executed.**
 
 - **Context compaction** in BaseAgent — near a token threshold, summarize older turns,
   keep recent N + load-bearing (system/task). Opt-in `harness.compaction`, budgeted, OFF.
+
+  > **Shape is constrained** — see `2026-07-30-v3-runtime-kernel-design.md` §1.1. Ship it as
+  > a **pure function** `memory/compaction.py:compact(messages, *, max_tokens, keep_recent,
+  > pinned, summarize) -> list[Message]` with a **single call site** in
+  > `BaseAgent.complete()`, so V3 E4 (Context Compiler) absorbs it by moving the call site
+  > rather than rewriting it. Three S5-local correctness requirements fall out:
+  > (a) `summarize` calls `self.llm.complete`, **never** `self.complete` — the latter
+  > re-enters compaction unboundedly; accrue usage by hand into `_active_ctx` exactly as
+  > `_maybe_reflect` does. (b) The `pinned` predicate must protect the recall system message
+  > and the task — recall-as-data is the S2a anti-poisoning contract and must not be
+  > silently compacted away. (c) Injecting `summarize` makes the compaction logic unit-
+  > testable with a stub, no `MockLLMProvider` needed.
 - **Session artifacts** — `SessionStore` persists run state (turns/summary/progress) to
   `.lottie/sessions/<id>/`, generalizing the #17 durable-resume machinery from mesh to
   plain BaseAgent runs.
