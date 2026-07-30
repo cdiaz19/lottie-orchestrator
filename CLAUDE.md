@@ -2,6 +2,7 @@
 > Provider-agnostic multi-agent framework with shared knowledge & AI governance.
 > Works with Claude Code, Cursor, Codex, and any LLM.
 > Full spec: see `LOTTIE_PHASE0_SPEC.md`
+> Development methodology (design-first, modular, lab-validated): see `docs/METHODOLOGY.md`
 
 ---
 
