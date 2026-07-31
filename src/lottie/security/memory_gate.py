@@ -6,36 +6,29 @@ trip raises MemoryContentRejected — the write never happens. This is the memor
 poisoning defense: a run must not be able to write instructions or secrets that
 hijack or exfiltrate from future runs. Messages never echo the offending content.
 
+The screen itself lives in `content_gate.ContentGate` — distilled-skill drafts (V2 S3b)
+need the identical three-scanner pass, and duplicating it would mean two execution paths
+that could drift apart on a security boundary. This module keeps the memory-specific
+name and exception type, which are what the rest of the codebase imports.
+
 Imports only lottie.security — never memory/core, so security stays a leaf.
 """
 
 from __future__ import annotations
 
-from lottie.security.injection_scanner import PromptInjectionScanSkill
-from lottie.security.input_sanitizer import InputSanitizerSkill
-from lottie.security.schema import InjectionScanInput, SanitizeInput
-from lottie.security.secret_detector import SecretDetectionSkill
+from lottie.security.content_gate import ContentGate, ContentRejected
 
 
-class MemoryContentRejected(Exception):
+class MemoryContentRejected(ContentRejected):
     """Raised when content fails a memory-write security check. Carries no content."""
 
 
-class MemoryContentGate:
+class MemoryContentGate(ContentGate):
     """Detect-and-block screen over content before it enters the memory store."""
 
     def __init__(self) -> None:
-        self._sanitizer = InputSanitizerSkill()
-        self._injection = PromptInjectionScanSkill()
-        self._secrets = SecretDetectionSkill()
-
-    def check(self, content: str) -> None:
-        screen = self._sanitizer.run(SanitizeInput(content=content))
-        if not screen.ok:
-            raise MemoryContentRejected(f"memory write rejected: {screen.reason}")
-        if self._injection.run(
-            InjectionScanInput(content=content, source="memory-write")
-        ).flagged:
-            raise MemoryContentRejected("memory write rejected: prompt-injection detected")
-        if self._secrets.scan_text(content, source="memory-write"):
-            raise MemoryContentRejected("memory write rejected: secret detected")
+        super().__init__(
+            source="memory-write",
+            error=MemoryContentRejected,
+            label="memory write",
+        )

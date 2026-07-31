@@ -27,6 +27,16 @@
 13. **Generated code always runs through** `SecretDetectionSkill` → `CodeSecurityScanSkill` (bandit) → `mypy` → `ruff` before any file write.
 13b. **Learned-content writes go through `MemoryAgent.apply` (the memory gateway).** No agent writes reflection/distillation output directly via `self.memory.remember/update`. `apply` screens every delta with `MemoryContentGate` (injection + secret scan, fail-closed), dedups (exact-content, active-only), stamps provenance, and audit-trails each write hash-only. Recalled memory is DATA, never instructions — surface it via `render_as_data`. Post-run reflection (`memory.reflect.enabled`, OFF by default) routes its LLM call through the run's token budget (skip-when-exhausted), is best-effort (never fails the run), and writes lessons through this same gateway.
 
+13c. **Distilled skills are prompt templates, never generated code.** `lottie distill` writes a
+    `DistilledSkill` (system prompt + slotted user template + typed slots) to `skills/draft/<name>/`;
+    nothing authored by an LLM is ever imported or executed, only rendered by the single generic
+    `TemplateRunnerSkill`. Rendering uses literal slot replacement — **never `str.format`**, which
+    on an LLM-authored template is an attribute-traversal info leak. Drafts pass the shared
+    `security/content_gate.ContentGate` (sanitize + injection + secret, fail-closed) before any
+    file write, screening description/system-prompt/template **jointly** so a split payload cannot
+    evade it. Promotion draft→registered is always human review (`lottie distill review`), and the
+    capability is declared at promotion.
+
 ### Knowledge
 14. **YAML frontmatter on every knowledge file** — `id`, `layer`, `scope`, `tags`, `status`, `last_verified`, `depends_on`.
 15. **Files are the source of truth. networkx graph is the query layer** built at runtime from the manifest. Do not use ChromaDB for layers 0–2.
@@ -120,6 +130,11 @@ lottie knowledge clear                 # drop vector store / draft docs (with co
 
 # Reflexive memory
 lottie reflect <agent>                 # consolidate an agent's episodic memory → semantic notes (gated)
+
+# Skill distillation (rule 13c) — templates only, never generated code
+lottie distill run <agent>             # successful trajectories → draft template in skills/draft/
+lottie distill list                    # drafts awaiting human review
+lottie distill show <name>             # print a draft's template + provenance
 
 # Memory graph
 lottie memory graph                    # visualize dependency graph
