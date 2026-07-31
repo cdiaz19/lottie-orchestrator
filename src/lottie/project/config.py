@@ -47,6 +47,17 @@ class ReflectConfig(BaseModel):
     enabled: bool = False
 
 
+class TrajectoryConfig(BaseModel):
+    """Per-agent episodic trajectory persistence. Disabled by default.
+
+    Spends no tokens — unlike reflection this writes no LLM call. Enabling it is what
+    gives `lottie reflect` and skill distillation a corpus to read.
+    """
+
+    enabled: bool = False
+    max_chars: int = 4000  # per-field bound on the raw task/outcome text
+
+
 class MemoryConfig(BaseModel):
     """Per-agent memory store config. Disabled by default (agent keeps NullMemoryClient)."""
 
@@ -56,6 +67,7 @@ class MemoryConfig(BaseModel):
     namespace: str | None = None  # memory namespace; None → resolved to the agent name
     recall: RecallConfig = RecallConfig()
     reflect: ReflectConfig = ReflectConfig()
+    trajectory: TrajectoryConfig = TrajectoryConfig()
 
 
 class AgentConfig(BaseModel):

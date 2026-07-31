@@ -1,6 +1,7 @@
 from lottie.memory.reflection import (
     RunTrajectory,
     build_reflection_prompt,
+    clip,
     parse_reflection,
 )
 from lottie.memory.schema import DeltaOp
@@ -35,3 +36,28 @@ def test_parse_reflection_one_add_per_line() -> None:
 
 def test_parse_reflection_empty_is_no_deltas() -> None:
     assert parse_reflection("   \n\n") == []
+
+
+# --- clip: bounds what a single run can write into the store (S3a) ---
+
+
+def test_clip_short_text_unchanged() -> None:
+    assert clip("hello", 100) == "hello"
+
+
+def test_clip_text_at_the_limit_unchanged() -> None:
+    assert clip("abcde", 5) == "abcde"
+
+
+def test_clip_marker_is_appended_not_substituted() -> None:
+    # The bound applies to retained content; the marker is additive so a reader can
+    # always tell truncation happened.
+    assert clip("a" * 100, 10) == "a" * 10 + "…[clipped]"
+
+
+def test_clip_zero_limit_keeps_nothing_but_still_marks() -> None:
+    assert clip("abc", 0) == "…[clipped]"
+
+
+def test_clip_empty_text_unchanged() -> None:
+    assert clip("", 10) == ""

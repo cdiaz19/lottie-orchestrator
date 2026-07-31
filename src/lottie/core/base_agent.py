@@ -37,9 +37,16 @@ from lottie.memory.recall import RecalledMemory, render_as_data
 from lottie.memory.reflection import (
     RunTrajectory,
     build_reflection_prompt,
+    clip,
     parse_reflection,
 )
-from lottie.memory.schema import MemoryOrigin, MemoryQuery, MemoryTier
+from lottie.memory.schema import (
+    DeltaOp,
+    MemoryDelta,
+    MemoryOrigin,
+    MemoryQuery,
+    MemoryTier,
+)
 
 
 class NotStreamable(RuntimeError):
@@ -95,6 +102,9 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         self._recall_prefix: str = ""
         self._reflect_enabled: bool = False
         self._reflect_namespace: str = ""
+        self._trajectory_enabled: bool = False
+        self._trajectory_namespace: str = ""
+        self._trajectory_max_chars: int = 4000
 
     def set_policy(self, gate: PolicyGate) -> None:
         """Attach a policy gate (called by instantiate_agent for CLI/serve runs)."""
@@ -133,6 +143,59 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         """Enable post-run reflexive write-back for this agent (via instantiate_agent)."""
         self._reflect_enabled = enabled
         self._reflect_namespace = namespace
+
+    def set_trajectory(self, *, enabled: bool, namespace: str, max_chars: int) -> None:
+        """Enable post-run episodic trajectory persistence (via instantiate_agent)."""
+        self._trajectory_enabled = enabled
+        self._trajectory_namespace = namespace
+        self._trajectory_max_chars = max_chars
+
+    def _persist_trajectory(self, data: InputT, output: OutputT | None) -> None:
+        """Best-effort: append this run to episodic memory via the gateway (rule 13b).
+
+        Runs for successes AND failures — failures are the more useful half of the
+        corpus. Makes no LLM call, so unlike `_maybe_reflect` it has no budget
+        interaction and needs no skip-when-exhausted check.
+
+        Never raises: a store failure must not fail an otherwise-good run, nor mask an
+        already-failing one.
+        """
+        if not self._trajectory_enabled:
+            return
+        m = self.last_metrics
+        if m is None:  # gates blocked the run before `_execute` — nothing happened
+            return
+        try:
+            limit = self._trajectory_max_chars
+            trajectory = RunTrajectory(
+                task=clip(data.model_dump_json(), limit),
+                outcome=clip(output.model_dump_json(), limit) if output is not None else "",
+                success=m.success,
+                error=m.error,
+                input_tokens=m.input_tokens,
+                output_tokens=m.output_tokens,
+                cost_usd=m.cost_usd,
+                latency_ms=m.latency_ms,
+            )
+            # lazy import: avoids a core<->memory.agent import cycle (as _maybe_reflect does)
+            from lottie.memory.agent import MemoryAgent
+
+            gateway = MemoryAgent(llm=self.llm, memory=self.memory, audit=self._audit)
+            gateway.apply(
+                [
+                    MemoryDelta(
+                        op=DeltaOp.ADD,
+                        content=trajectory.model_dump_json(),
+                        tags=["trajectory", "success" if m.success else "failure"],
+                    )
+                ],
+                namespace=self._trajectory_namespace,
+                source_agent=self.name,
+                origin=MemoryOrigin.MANUAL,
+                tier=MemoryTier.EPISODIC,
+            )
+        except Exception as exc:  # best-effort — never fail or mask the run
+            warnings.warn(f"trajectory persistence failed: {exc}", stacklevel=2)
 
     def _load_recall(self) -> None:
         """Best-effort: stash a render_as_data block of recalled semantic notes.
@@ -256,6 +319,10 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
             self._recall_prefix = ""  # clear before the audit/settle finally block
             try:
                 self._write_audit(data, output, is_root)
+                # After audit so the ledger stays authoritative, before settle so a slow
+                # store cannot hold a budget reservation open. Both calls swallow their
+                # own failures, so neither can break the other.
+                self._persist_trajectory(data, output)
             finally:
                 # Settle AFTER audit records the real cost: during the tiny window both the
                 # reservation AND the committed cost count (over-count — the safe direction for

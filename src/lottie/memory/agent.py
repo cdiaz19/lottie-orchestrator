@@ -101,8 +101,13 @@ class MemoryAgent(BaseAgent[ReflectionInput, ReflectionResult]):
         source_agent: str,
         origin: MemoryOrigin = MemoryOrigin.MANUAL,
         run_id: str | None = None,
+        tier: MemoryTier = MemoryTier.SEMANTIC,
     ) -> ApplyResult:
-        """Gate, dedup, provenance-stamp, and audit each delta. Fail-closed per delta."""
+        """Gate, dedup, provenance-stamp, and audit each delta. Fail-closed per delta.
+
+        `tier` defaults to SEMANTIC so S2b's reflection callers are unchanged. EPISODIC
+        writes are append-only — see `_apply_add`.
+        """
         result = ApplyResult()
         for delta in deltas:
             if delta.op in (DeltaOp.ADD, DeltaOp.UPDATE):
@@ -115,7 +120,7 @@ class MemoryAgent(BaseAgent[ReflectionInput, ReflectionResult]):
                     result.rejected.append(str(exc))
                     continue
             if delta.op is DeltaOp.ADD:
-                mid = self._apply_add(delta, namespace, source_agent, origin, run_id)
+                mid = self._apply_add(delta, namespace, source_agent, origin, run_id, tier)
                 self._write_apply_audit(source_agent, delta.content, "memory_write", None)
                 result.applied_ids.append(mid)
             elif delta.op is DeltaOp.UPDATE:
@@ -146,16 +151,22 @@ class MemoryAgent(BaseAgent[ReflectionInput, ReflectionResult]):
         source_agent: str,
         origin: MemoryOrigin,
         run_id: str | None,
+        tier: MemoryTier = MemoryTier.SEMANTIC,
     ) -> str:
-        existing = self._find_by_content(namespace, delta.content)
-        if existing is not None and existing.memory_id is not None:
-            merged = sorted(set(existing.tags) | set(delta.tags))
-            updated = self.memory.update(existing.memory_id, MemoryPatch(tags=merged))
-            return updated.memory_id or existing.memory_id
+        # Episodic (T1) is an append-only event log: two identical runs are two distinct
+        # events, so folding them would destroy information. Skipping the dedup scan also
+        # keeps the write off `_find_by_content`'s O(n) path, which matters once a
+        # trajectory is written on every single run.
+        if tier is not MemoryTier.EPISODIC:
+            existing = self._find_by_content(namespace, delta.content)
+            if existing is not None and existing.memory_id is not None:
+                merged = sorted(set(existing.tags) | set(delta.tags))
+                updated = self.memory.update(existing.memory_id, MemoryPatch(tags=merged))
+                return updated.memory_id or existing.memory_id
         return self.memory.remember(
             MemoryRecord(
                 content=delta.content,
-                tier=MemoryTier.SEMANTIC,
+                tier=tier,
                 namespace=namespace,
                 tags=delta.tags,
                 origin=origin,

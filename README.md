@@ -54,6 +54,40 @@ lottie memory impact <file>         # what breaks if this is deprecated?
 lottie memory audit                 # cycles, orphans, stale deps
 ```
 
+### Self-learning memory
+
+Every learned-content write goes through the `MemoryAgent` gateway, which injection- and
+secret-screens it, stamps provenance, and audit-trails it hash-only. All of it is opt-in
+per agent, in `config.yaml`:
+
+```yaml
+memory:
+  enabled: true
+  backend: sqlite              # sqlite | null | mock
+  path: .lottie/memory.db
+  namespace: null              # null → the agent's own name
+  recall:
+    enabled: false             # inject semantic notes as DATA, never as instructions
+    limit: 5
+  reflect:
+    enabled: false             # post-run: distil the run into lessons (spends tokens)
+  trajectory:
+    enabled: false             # append each run to episodic memory (spends NO tokens)
+    max_chars: 4000            # per-field bound on stored task/outcome text
+```
+
+Trajectory persistence is what gives `lottie reflect` and skill distillation a corpus to
+read — without it the episodic tier stays empty. Records land in the EPISODIC tier, which
+recall-as-data never reads, so a raw trajectory can never reach a prompt.
+
+```bash
+lottie reflect digest               # consolidate episodic runs → durable semantic notes
+```
+
+> Trajectories store raw task and outcome text, unlike the audit ledger which stores only
+> hashes. They are gated on write and size-bounded, but a project handling sensitive input
+> should leave `trajectory.enabled` off.
+
 ### Run a multi-agent mesh
 
 A mesh is itself an agent: a supervisor routes each task across declared workers, with token/cost rolled up. The default `LocalEngine` is zero-dep; the optional `[mesh]` extra swaps in a `LangGraphEngine` for parallel fan-out, human-in-the-loop interrupt/resume, and checkpoint time-travel.

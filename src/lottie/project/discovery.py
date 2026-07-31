@@ -259,6 +259,15 @@ def instantiate_agent(
                 enabled=True,
                 namespace=config.memory.namespace or agent.name,
             )
+        # V2 S3a: append each run to episodic memory. Spends no tokens (no LLM call), so
+        # unlike reflect it needs no max_run_tokens warning. This is what gives
+        # `lottie reflect` and S3b distillation a corpus to read.
+        if config.memory.trajectory.enabled:
+            agent.set_trajectory(
+                enabled=True,
+                namespace=config.memory.namespace or agent.name,
+                max_chars=config.memory.trajectory.max_chars,
+            )
     # Rules 8 & 9: input/output security gate on the BaseAgent chokepoint. Attached only
     # when a caller injects one (the CLI passes serve.security.SecurityGate); serve leaves
     # it None and gates externally in AgentService, so no path is gated twice.
