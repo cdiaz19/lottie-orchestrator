@@ -11,6 +11,7 @@ import typer
 from lottie.cli.audit import audit
 from lottie.cli.benchmark import benchmark_app
 from lottie.cli.create import create_app
+from lottie.cli.distill import distill_app
 from lottie.cli.doctor import doctor
 from lottie.cli.init import init
 from lottie.cli.knowledge import knowledge_app
@@ -39,6 +40,7 @@ def _main() -> None:
 app.command("init")(init)
 app.add_typer(benchmark_app, name="benchmark")
 app.add_typer(create_app, name="create")
+app.add_typer(distill_app, name="distill")
 app.add_typer(knowledge_app, name="knowledge")
 app.add_typer(list_app, name="list")
 app.add_typer(memory_app, name="memory")
