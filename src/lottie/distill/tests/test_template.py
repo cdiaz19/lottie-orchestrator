@@ -92,3 +92,27 @@ class TestTemplateRunnerSkill:
     def test_capability_name_is_distilled(self) -> None:
         # Rule 11: an agent declares `distilled` to invoke promoted templates.
         assert TemplateRunnerSkill.resolved_capability_name() == "distilled"
+
+
+class TestRenderIsSinglePass:
+    """Sequential per-slot replacement re-scans inserted text; this pins that it doesn't.
+
+    Regression: `render` originally looped over a set of slot names calling
+    `str.replace`, so a value containing `{other_slot}` was expanded a second time.
+    Set iteration order made it appear only under some PYTHONHASHSEED values — green
+    locally, red on CI.
+    """
+
+    def test_value_that_looks_like_another_slot_is_not_expanded(self) -> None:
+        out = render(_skill(), {"doc": "{style}", "style": "terse"})
+        assert out == "Summarise {style} in terse style."
+
+    def test_value_that_looks_like_itself_is_not_expanded(self) -> None:
+        out = render(_skill(), {"doc": "{doc}", "style": "s"})
+        assert out == "Summarise {doc} in s style."
+
+    def test_result_is_order_independent(self) -> None:
+        # Both slots carry each other's placeholder; a re-scanning implementation
+        # produces different output depending on which slot it happens to fill first.
+        out = render(_skill(), {"doc": "{style}", "style": "{doc}"})
+        assert out == "Summarise {style} in {doc} style."

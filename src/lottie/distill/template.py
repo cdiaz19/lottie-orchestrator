@@ -21,11 +21,14 @@ content in distillation is the *template*, and that is gated once at authoring t
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from lottie.core import BaseSkill
 from lottie.distill.schema import DistilledSkill, TemplateRunInput, TemplateRunOutput
 from lottie.llm import LLMProvider, Message
+
+_SLOT_RE = re.compile(r"\{([a-z][a-z0-9_]{0,39})\}")
 
 
 class SlotError(ValueError):
@@ -46,10 +49,17 @@ def render(skill: DistilledSkill, values: dict[str, str]) -> str:
     if missing:
         raise SlotError(f"missing required slot(s) for {skill.name!r}: {sorted(missing)}")
 
-    rendered = skill.user_template
-    for slot in declared:
-        rendered = rendered.replace("{" + slot + "}", values.get(slot, ""))
-    return rendered
+    def _fill(match: re.Match[str]) -> str:
+        name = match.group(1)
+        # Undeclared placeholders stay literal — that is what keeps an authored
+        # `{x.__class__...}` inert rather than evaluated.
+        return values.get(name, "") if name in declared else match.group(0)
+
+    # ONE left-to-right pass. Sequential str.replace per slot would re-scan text it
+    # had already inserted, so a value containing `{other_slot}` would be expanded a
+    # second time — the exact injection this function exists to prevent. (Caught by
+    # CI: iterating a set made the bug appear only under some PYTHONHASHSEED values.)
+    return _SLOT_RE.sub(_fill, skill.user_template)
 
 
 class TemplateRunnerSkill(BaseSkill[TemplateRunInput, TemplateRunOutput]):
