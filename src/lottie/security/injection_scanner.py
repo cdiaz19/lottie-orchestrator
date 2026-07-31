@@ -44,9 +44,15 @@ _RULES: list[_Rule] = [
         label="instruction-override/ignore-previous",
         pattern=re.compile(r"ignore\s+(all\s+)?previous\s+instructions", re.IGNORECASE),
     ),
+    # "above" alone was too narrow — lab Round 23 leaked "Disregard prior rules"
+    # past the memory write gateway. Kept to override-flavoured objects so ordinary
+    # prose ("you can disregard the warning") still does not flag.
     _Rule(
         label="instruction-override/disregard-above",
-        pattern=re.compile(r"disregard\s+(the\s+)?above", re.IGNORECASE),
+        pattern=re.compile(
+            r"disregard\s+(?:the\s+)?(?:above|prior|previous|earlier|all\s+prior)\b",
+            re.IGNORECASE,
+        ),
     ),
     _Rule(
         label="instruction-override/forget-everything",
@@ -92,6 +98,29 @@ _RULES: list[_Rule] = [
     _Rule(
         label="role-override/fake-role-tag",
         pattern=re.compile(r"</?(?:system|assistant)>", re.IGNORECASE),
+    ),
+    # Chat-template control tokens (ChatML `<|im_start|>`, `<|system|>`, and the
+    # equivalents in Llama/Mistral templates). The `<|...|>` form does not occur in
+    # ordinary prose, so a generic match is safe — and a document that legitimately
+    # documents chat templates being flagged is the correct fail-closed trade for a
+    # memory-write gate (rule 10). Bounded length so a stray `|` cannot run away.
+    # Found by lab Round 23: `<|im_start|>system ...` reached the gateway unflagged.
+    _Rule(
+        label="role-override/chat-template-token",
+        pattern=re.compile(r"<\|[^|>\n]{1,32}\|>"),
+    ),
+    # Line-anchored role prefix — plain-text role spoofing ("SYSTEM: ..."). Anchored
+    # to line start so mid-sentence prose ("The build system: it compiles") is not
+    # flagged. `user` is deliberately excluded: "User:" is common in benign logs.
+    _Rule(
+        label="role-override/role-prefix-line",
+        pattern=re.compile(r"^[ \t]*(?:system|assistant)[ \t]*:[ \t]*\S", re.IGNORECASE | re.M),
+    ),
+    # Named jailbreak personas. These are terms of art in injection payloads rather
+    # than ordinary memory content.
+    _Rule(
+        label="role-override/jailbreak-mode",
+        pattern=re.compile(r"\b(?:developer|debug|god|jailbreak|dan)\s+mode\b", re.IGNORECASE),
     ),
     # exfiltration / tool abuse
     _Rule(
