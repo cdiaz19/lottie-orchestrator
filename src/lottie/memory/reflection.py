@@ -56,3 +56,15 @@ def parse_reflection(text: str) -> list[MemoryDelta]:
         for line in text.splitlines()
         if line.strip()
     ]
+
+
+def clip(text: str, max_chars: int) -> str:
+    """Bound `text` to `max_chars`, marking it when content was dropped.
+
+    Trajectories carry raw task and outcome text, so a single run could otherwise write
+    an unbounded blob into the store. The marker is appended rather than substituted so
+    a later reader can always tell truncation occurred.
+    """
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars] + "…[clipped]"
