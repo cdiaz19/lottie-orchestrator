@@ -70,6 +70,24 @@ class MemoryConfig(BaseModel):
     trajectory: TrajectoryConfig = TrajectoryConfig()
 
 
+class CompactionConfig(BaseModel):
+    """Summarise older turns when a run approaches its context window. OFF by default.
+
+    Spends tokens (one LLM call per compaction), so it is counted against the run's
+    budget and skipped when that budget is exhausted.
+    """
+
+    enabled: bool = False
+    max_context_tokens: int = 8000  # approximate; see memory/compaction.py
+    keep_recent: int = 6            # most recent turns kept verbatim; must be >= 1
+
+
+class HarnessConfig(BaseModel):
+    """Long-running ergonomics (V2 S5)."""
+
+    compaction: CompactionConfig = CompactionConfig()
+
+
 class AgentConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -84,6 +102,7 @@ class AgentConfig(BaseModel):
     max_run_tokens: int | None = None  # per-run token cap; None = unlimited
     max_turns: int | None = None  # per-run LLM-completion cap (runaway-loop guard); None = off
     memory: MemoryConfig = MemoryConfig()
+    harness: HarnessConfig = HarnessConfig()
     chat: ChatConfig | None = None  # None = agent not exposed on /v1/chat/completions
 
 

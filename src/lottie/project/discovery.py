@@ -268,6 +268,14 @@ def instantiate_agent(
                 namespace=config.memory.namespace or agent.name,
                 max_chars=config.memory.trajectory.max_chars,
             )
+    # V2 S5a: context compaction for long runs. Independent of memory.enabled — a run
+    # can outgrow its window whether or not the agent learns.
+    if config.harness.compaction.enabled:
+        agent.set_compaction(
+            enabled=True,
+            max_context_tokens=config.harness.compaction.max_context_tokens,
+            keep_recent=config.harness.compaction.keep_recent,
+        )
     # Rules 8 & 9: input/output security gate on the BaseAgent chokepoint. Attached only
     # when a caller injects one (the CLI passes serve.security.SecurityGate); serve leaves
     # it None and gates externally in AgentService, so no path is gated twice.
