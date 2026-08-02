@@ -96,6 +96,25 @@ is always a human decision: `lottie distill review --approve` re-screens the dra
 to `skills/distilled/<name>/`, and records who approved it under which capability. An agent
 must declare both `distilled` and that capability to invoke it.
 
+### Long runs: context compaction
+
+```yaml
+harness:
+  compaction:
+    enabled: false          # OFF by default; spends tokens (one LLM call per compaction)
+    max_context_tokens: 8000
+    keep_recent: 6          # most recent turns kept verbatim
+```
+
+When a run approaches its context window, older turns are summarised into a single
+`[compacted history]` message and the recent ones are kept verbatim. System messages are
+**pinned** — they carry the recall-as-data block, which is a security contract, not a
+nicety, so compaction never removes it.
+
+Compaction is best-effort: if summarising fails the full context is sent instead, because
+the provider's own context error is a clearer signal than a summariser outage disguised as
+a task failure. A token-cap trip is *not* swallowed — that is the run's decision to make.
+
 ### Does learning actually help?
 
 ```bash
