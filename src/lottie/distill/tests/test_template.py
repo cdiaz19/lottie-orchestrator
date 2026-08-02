@@ -6,6 +6,11 @@ import pytest
 
 from lottie.distill.schema import DistilledSkill, SkillSlot, TemplateRunInput
 from lottie.distill.template import SlotError, TemplateRunnerSkill, render
+from lottie.governance.capability import (
+    CapabilityDenied,
+    CapabilityGate,
+    _active_capabilities,
+)
 from lottie.llm import MockLLMProvider
 
 
@@ -116,3 +121,46 @@ class TestRenderIsSinglePass:
         # produces different output depending on which slot it happens to fill first.
         out = render(_skill(), {"doc": "{style}", "style": "{doc}"})
         assert out == "Summarise {style} in {doc} style."
+
+
+class TestPerSkillCapability:
+    """Rule 11 at template granularity: a promoted skill carries the capability its
+    human reviewer declared, so an agent needs `distilled` AND that name."""
+
+    def test_a_draft_without_a_capability_is_unconstrained(self) -> None:
+        runner = TemplateRunnerSkill(MockLLMProvider(["ok"]), enable_benchmarks=False)
+        token = _active_capabilities.set(CapabilityGate(["distilled"]))
+        try:
+            out = runner.run(TemplateRunInput(skill=_skill(), values={"doc": "d"}))
+        finally:
+            _active_capabilities.reset(token)
+        assert out.result == "ok"
+
+    def test_declared_capability_is_enforced(self) -> None:
+        promoted = _skill(capability="doc_summary")
+        runner = TemplateRunnerSkill(MockLLMProvider(["ok"]), enable_benchmarks=False)
+        token = _active_capabilities.set(CapabilityGate(["distilled"]))
+        try:
+            with pytest.raises(CapabilityDenied):
+                runner.run(TemplateRunInput(skill=promoted, values={"doc": "d"}))
+        finally:
+            _active_capabilities.reset(token)
+
+    def test_holding_both_capabilities_allows_the_run(self) -> None:
+        promoted = _skill(capability="doc_summary")
+        runner = TemplateRunnerSkill(MockLLMProvider(["ok"]), enable_benchmarks=False)
+        token = _active_capabilities.set(CapabilityGate(["distilled", "doc_summary"]))
+        try:
+            out = runner.run(TemplateRunInput(skill=promoted, values={"doc": "d"}))
+        finally:
+            _active_capabilities.reset(token)
+        assert out.result == "ok"
+
+    def test_the_runner_capability_alone_is_still_required(self) -> None:
+        runner = TemplateRunnerSkill(MockLLMProvider(["ok"]), enable_benchmarks=False)
+        token = _active_capabilities.set(CapabilityGate(["something_else"]))
+        try:
+            with pytest.raises(CapabilityDenied):
+                runner.run(TemplateRunInput(skill=_skill(), values={"doc": "d"}))
+        finally:
+            _active_capabilities.reset(token)

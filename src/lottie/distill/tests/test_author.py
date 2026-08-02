@@ -93,3 +93,10 @@ class TestParse:
         )
         with pytest.raises(DistillParseError, match="validation"):
             parse_distilled(reply, name="s")
+
+
+def test_a_bare_json_array_reply_is_rejected() -> None:
+    # A model can legitimately reply with a JSON array; that is not a skill. The
+    # brace-scoped search rejects it before parsing, so the message is "no JSON object".
+    with pytest.raises(DistillParseError, match="no JSON object"):
+        parse_distilled('["a", "b"]', name="s")

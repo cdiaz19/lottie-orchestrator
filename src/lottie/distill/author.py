@@ -65,11 +65,12 @@ def parse_distilled(text: str, *, name: str, version: str = "0.1.0") -> Distille
     if match is None:
         raise DistillParseError("no JSON object in distillation reply")
     try:
-        payload = json.loads(match.group())
+        # `_JSON_BLOCK` only matches a `{...}` span, so a successful parse is always a
+        # dict — a non-object reply (a bare JSON array, say) fails the search above with
+        # "no JSON object" instead. No isinstance check is reachable here.
+        payload: dict[str, object] = json.loads(match.group())
     except json.JSONDecodeError as exc:
         raise DistillParseError(f"distillation reply is not valid JSON: {exc}") from exc
-    if not isinstance(payload, dict):
-        raise DistillParseError("distillation reply is not a JSON object")
 
     payload["name"] = name
     payload["version"] = version

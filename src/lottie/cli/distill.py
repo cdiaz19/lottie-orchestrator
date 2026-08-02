@@ -19,7 +19,21 @@ import typer
 
 from lottie.distill.author import DistillParseError, build_distill_prompt, parse_distilled
 from lottie.distill.schema import DistillProvenance
-from lottie.distill.store import DraftRejected, bump_minor, existing_version, write_draft
+from lottie.distill.store import (
+    DraftNotFound,
+    DraftRejected,
+    InvalidSkillName,
+    NotPromotable,
+    bump_minor,
+    existing_version,
+    list_drafts,
+    list_promoted,
+    load_draft,
+    load_promoted,
+    promote,
+    reject,
+    write_draft,
+)
 from lottie.llm import build_provider
 from lottie.memory.reflection import RunTrajectory
 from lottie.memory.schema import MemoryQuery, MemoryTier
@@ -116,8 +130,6 @@ def distill(
 @distill_app.command("show")
 def show(name: str) -> None:
     """Print a distilled draft's template as JSON."""
-    from lottie.distill.store import load_draft
-
     root = find_project_root()
     skill, prov = load_draft(root, name)
     typer.echo(json.dumps({"skill": skill.model_dump(), "provenance": prov.model_dump()}, indent=2))
@@ -126,8 +138,6 @@ def show(name: str) -> None:
 @distill_app.command("list")
 def list_command() -> None:
     """List distilled drafts awaiting review."""
-    from lottie.distill.store import list_drafts
-
     root = find_project_root()
     names = list_drafts(root)
     if not names:
@@ -136,3 +146,63 @@ def list_command() -> None:
     for draft in names:
         version = existing_version(root, draft) or "?"
         typer.echo(f"{draft}  v{version}  (draft)")
+
+
+@distill_app.command("review")
+def review(
+    name: Annotated[str | None, typer.Argument(help="Draft to act on. Omit to list.")] = None,
+    approve: Annotated[bool, typer.Option("--approve", help="Promote the draft.")] = False,
+    reject_it: Annotated[bool, typer.Option("--reject", help="Discard the draft.")] = False,
+    capability: Annotated[
+        str | None, typer.Option("--capability", help="Rule-11 capability to grant (approve).")
+    ] = None,
+    reviewer: Annotated[
+        str, typer.Option("--reviewer", help="Who approved it (recorded).")
+    ] = "unknown",
+) -> None:
+    """Review distilled drafts. With no name, lists what is pending.
+
+    Promotion is always a human decision — nothing here is automatic, and the capability
+    is supplied by the reviewer, never by the model.
+    """
+    root = find_project_root()
+
+    if name is None:
+        pending = list_drafts(root)
+        promoted = list_promoted(root)
+        if not pending:
+            typer.echo("no drafts pending review")
+        for draft in pending:
+            typer.echo(f"pending   {draft}  v{existing_version(root, draft) or '?'}")
+        for done in promoted:
+            skill, record = load_promoted(root, done)
+            typer.echo(
+                f"promoted  {done}  v{skill.version}  capability={record.capability} "
+                f"by={record.reviewer}"
+            )
+        return
+
+    if approve and reject_it:
+        raise typer.BadParameter("choose --approve or --reject, not both")
+    if not approve and not reject_it:
+        raise typer.BadParameter("specify --approve or --reject")
+
+    if reject_it:
+        try:
+            reject(root, name)
+        except (DraftNotFound, InvalidSkillName) as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        typer.echo(f"rejected '{name}' — draft discarded")
+        return
+
+    if not capability:
+        raise typer.BadParameter("--capability is required to approve (rule 11)")
+    try:
+        target = promote(root, name, capability=capability, reviewer=reviewer)
+    except (DraftNotFound, InvalidSkillName, NotPromotable) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    except DraftRejected as exc:
+        raise typer.BadParameter(f"promotion blocked by the security gate: {exc}") from exc
+
+    typer.echo(f"promoted '{name}' -> {target.relative_to(root)}")
+    typer.echo(f"  capability: {capability}  (agents must declare this AND 'distilled')")

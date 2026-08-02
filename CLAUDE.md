@@ -34,8 +34,12 @@
     on an LLM-authored template is an attribute-traversal info leak. Drafts pass the shared
     `security/content_gate.ContentGate` (sanitize + injection + secret, fail-closed) before any
     file write, screening description/system-prompt/template **jointly** so a split payload cannot
-    evade it. Promotion draft→registered is always human review (`lottie distill review`), and the
-    capability is declared at promotion.
+    evade it. Promotion draft→registered is always human review (`lottie distill review`): the draft is
+    **re-screened** at promotion (it is a file on disk that may have been edited since
+    authoring), moved to `skills/distilled/<name>/` as data — never a generated module — and
+    stamped with a `promotion.yaml` naming the reviewer. The rule-11 capability is supplied
+    by the **reviewer, never the model**; an agent must then declare BOTH `distilled` and
+    that capability to invoke the template.
 
 ### Knowledge
 14. **YAML frontmatter on every knowledge file** — `id`, `layer`, `scope`, `tags`, `status`, `last_verified`, `depends_on`.
@@ -135,6 +139,9 @@ lottie reflect <agent>                 # consolidate an agent's episodic memory 
 lottie distill run <agent>             # successful trajectories → draft template in skills/draft/
 lottie distill list                    # drafts awaiting human review
 lottie distill show <name>             # print a draft's template + provenance
+lottie distill review                  # list drafts pending human review
+lottie distill review <name> --approve --capability <cap> --reviewer <who>
+lottie distill review <name> --reject  # discard a draft
 
 # Memory graph
 lottie memory graph                    # visualize dependency graph
