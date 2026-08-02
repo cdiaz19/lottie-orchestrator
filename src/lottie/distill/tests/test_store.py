@@ -266,3 +266,8 @@ class TestReject:
         write_draft(tmp_path, _skill(), _prov())
         reject(tmp_path, "summarise")
         assert list_promoted(tmp_path) == []
+
+
+def test_load_promoted_missing_raises(tmp_path: Path) -> None:
+    with pytest.raises(DraftNotFound):
+        load_promoted(tmp_path, "never_promoted")
