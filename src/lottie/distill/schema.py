@@ -27,6 +27,10 @@ class DistilledSkill(BaseModel):
     system_prompt: str
     user_template: str  # contains {slot_name} placeholders for declared slots
     slots: list[SkillSlot] = []
+    #: Rule-11 capability, declared by a human AT PROMOTION (S3c) — never by the model.
+    #: None on a draft; set when promoted. An agent must declare BOTH `distilled` (to
+    #: use the runner at all) and this name (to use this specific template).
+    capability: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_-]{0,39}$")
 
     def slot_names(self) -> set[str]:
         return {s.name for s in self.slots}
@@ -58,3 +62,17 @@ class TemplateRunOutput(BaseModel):
     result: str
     skill_name: str
     version: str
+
+
+class PromotionRecord(BaseModel):
+    """The human decision that turned a draft into a registered skill.
+
+    Promotion is never automatic (rule 12's pattern). This record is the audit trail:
+    who approved it, when, at which version, and under which capability.
+    """
+
+    skill_name: str
+    capability: str
+    reviewer: str
+    source_version: str
+    approved_at: float | None = None  # epoch seconds; stamped at promotion

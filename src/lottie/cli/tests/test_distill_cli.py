@@ -176,3 +176,98 @@ class TestDistillListAndShow:
         payload = json.loads(result.output)
         assert payload["skill"]["user_template"] == "Summarise {doc}."
         assert payload["provenance"]["source_agent"] == "digest"
+
+
+class TestDistillReview:
+    def _draft(self, project: Path) -> None:
+        _seed(project, 2)
+        runner.invoke(app, ["distill", "run", "digest"])
+
+    def test_review_lists_pending_drafts(self, project: Path) -> None:
+        self._draft(project)
+        result = runner.invoke(app, ["distill", "review"])
+        assert "pending" in result.output and "digest_distilled" in result.output
+
+    def test_review_reports_nothing_pending(self, project: Path) -> None:
+        assert "no drafts pending review" in runner.invoke(app, ["distill", "review"]).output
+
+    def test_approve_promotes_the_draft(self, project: Path) -> None:
+        self._draft(project)
+        result = runner.invoke(
+            app,
+            ["distill", "review", "digest_distilled", "--approve", "--capability", "digestion"],
+        )
+        assert result.exit_code == 0, result.output
+        assert (project / "skills" / "distilled" / "digest_distilled" / "template.yaml").is_file()
+
+    def test_approve_consumes_the_draft(self, project: Path) -> None:
+        self._draft(project)
+        runner.invoke(
+            app,
+            ["distill", "review", "digest_distilled", "--approve", "--capability", "digestion"],
+        )
+        assert not (project / "skills" / "draft" / "digest_distilled").exists()
+
+    def test_approve_records_the_reviewer_and_capability(self, project: Path) -> None:
+        self._draft(project)
+        runner.invoke(
+            app,
+            [
+                "distill", "review", "digest_distilled",
+                "--approve", "--capability", "digestion", "--reviewer", "ana",
+            ],
+        )
+        record = yaml.safe_load(
+            (project / "skills" / "distilled" / "digest_distilled" / "promotion.yaml").read_text()
+        )
+        assert record["reviewer"] == "ana" and record["capability"] == "digestion"
+
+    def test_approve_writes_no_python(self, project: Path) -> None:
+        # Rule 13c: promotion never produces an importable module.
+        self._draft(project)
+        runner.invoke(
+            app,
+            ["distill", "review", "digest_distilled", "--approve", "--capability", "digestion"],
+        )
+        target = project / "skills" / "distilled" / "digest_distilled"
+        assert list(target.glob("*.py")) == []
+
+    def test_approve_without_a_capability_is_refused(self, project: Path) -> None:
+        self._draft(project)
+        result = runner.invoke(app, ["distill", "review", "digest_distilled", "--approve"])
+        assert result.exit_code != 0 and "capability" in result.output
+
+    def test_reject_discards_the_draft(self, project: Path) -> None:
+        self._draft(project)
+        result = runner.invoke(app, ["distill", "review", "digest_distilled", "--reject"])
+        assert result.exit_code == 0
+        assert not (project / "skills" / "draft" / "digest_distilled").exists()
+
+    def test_reject_promotes_nothing(self, project: Path) -> None:
+        self._draft(project)
+        runner.invoke(app, ["distill", "review", "digest_distilled", "--reject"])
+        assert not (project / "skills" / "distilled").exists()
+
+    def test_approve_and_reject_together_is_refused(self, project: Path) -> None:
+        self._draft(project)
+        result = runner.invoke(
+            app, ["distill", "review", "digest_distilled", "--approve", "--reject"]
+        )
+        assert result.exit_code != 0
+
+    def test_neither_flag_is_refused(self, project: Path) -> None:
+        self._draft(project)
+        assert runner.invoke(app, ["distill", "review", "digest_distilled"]).exit_code != 0
+
+    def test_review_lists_promoted_skills(self, project: Path) -> None:
+        self._draft(project)
+        runner.invoke(
+            app,
+            ["distill", "review", "digest_distilled", "--approve", "--capability", "digestion"],
+        )
+        result = runner.invoke(app, ["distill", "review"])
+        assert "promoted" in result.output and "capability=digestion" in result.output
+
+    def test_path_traversal_in_a_name_is_refused(self, project: Path) -> None:
+        result = runner.invoke(app, ["distill", "review", "../../etc", "--reject"])
+        assert result.exit_code != 0

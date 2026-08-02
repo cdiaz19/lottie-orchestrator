@@ -84,13 +84,17 @@ recall-as-data never reads, so a raw trajectory can never reach a prompt.
 lottie reflect digest               # consolidate episodic runs → durable semantic notes
 lottie distill run digest           # successful runs → a reusable draft skill template
 lottie distill list                 # drafts awaiting human review
+lottie distill review               # what is pending, and what was promoted
+lottie distill review digest_distilled --approve --capability digestion --reviewer ana
 ```
 
 Distillation turns repeated successful runs into a **parameterized prompt template**, never
 generated Python — nothing authored by the model is imported or executed, only rendered by the
 single generic `TemplateRunnerSkill`. Drafts land in `skills/draft/<name>/` and pass the same
 injection/secret screen as memory writes before touching disk. Promotion to a registered skill
-is always a human decision.
+is always a human decision: `lottie distill review --approve` re-screens the draft, moves it
+to `skills/distilled/<name>/`, and records who approved it under which capability. An agent
+must declare both `distilled` and that capability to invoke it.
 
 > Trajectories store raw task and outcome text, unlike the audit ledger which stores only
 > hashes. They are gated on write and size-bounded, but a project handling sensitive input

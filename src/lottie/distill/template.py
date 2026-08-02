@@ -26,6 +26,7 @@ from pathlib import Path
 
 from lottie.core import BaseSkill
 from lottie.distill.schema import DistilledSkill, TemplateRunInput, TemplateRunOutput
+from lottie.governance.capability import active_capability_gate
 from lottie.llm import LLMProvider, Message
 
 _SLOT_RE = re.compile(r"\{([a-z][a-z0-9_]{0,39})\}")
@@ -86,6 +87,13 @@ class TemplateRunnerSkill(BaseSkill[TemplateRunInput, TemplateRunOutput]):
         self._llm = llm
 
     def _execute(self, data: TemplateRunInput) -> TemplateRunOutput:
+        # Rule 11, per-template. The class-level `distilled` capability is already checked
+        # by BaseSkill.run; a PROMOTED skill additionally carries the capability its human
+        # reviewer declared (S3c), so an agent must hold both. A draft has none and is
+        # therefore only invocable in tests and by explicit construction, never by an agent
+        # that merely declared `distilled`.
+        if data.skill.capability:
+            active_capability_gate().check(data.skill.capability)
         prompt = render(data.skill, data.values)
         response = self._llm.complete(
             [
