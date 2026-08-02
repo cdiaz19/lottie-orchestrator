@@ -96,6 +96,23 @@ is always a human decision: `lottie distill review --approve` re-screens the dra
 to `skills/distilled/<name>/`, and records who approved it under which capability. An agent
 must declare both `distilled` and that capability to invoke it.
 
+### Does learning actually help?
+
+```bash
+lottie benchmark agent digest --learning-delta
+```
+
+Runs the eval suite twice on the same provider — recall **off**, then **on** — and reports the
+per-metric difference plus a verdict (`improved` / `neutral` / `regressed`, judged on accuracy).
+A machine-readable report lands in `.lottie/benchmarks/<agent>-learning-delta.json`; it is the
+evidence behind any decision to turn learning on by default.
+
+Both arms disable every memory **write**, not just the baseline. A benchmark that wrote
+trajectories or lessons would mutate the corpus it measures, so a second run would silently
+report different numbers. The report also states how many notes were recalled — a `neutral`
+verdict over an empty store means the experiment never ran, which is not the same as learning
+not helping.
+
 > Trajectories store raw task and outcome text, unlike the audit ledger which stores only
 > hashes. They are gated on write and size-bounded, but a project handling sensitive input
 > should leave `trajectory.enabled` off.

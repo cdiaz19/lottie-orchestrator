@@ -63,3 +63,33 @@ class BenchmarkReport(BaseModel):
 
     agent: str
     providers: list[ProviderReport]
+
+
+class MetricDelta(BaseModel):
+    """One metric compared between the baseline and learning arms."""
+
+    metric: str
+    baseline: float
+    learning: float
+    delta: float                      # learning - baseline
+    pct_change: float | None = None   # None when the baseline is zero
+    higher_is_better: bool
+
+
+class LearningDeltaReport(BaseModel):
+    """Does learning actually help? The evidence behind the default-on decision.
+
+    Both arms run the SAME suite on the SAME provider with all memory WRITES disabled —
+    only recall differs. Writes stay off in both arms deliberately: a benchmark that
+    mutated the corpus it measures would not be reproducible, and the second run would
+    silently report different numbers than the first.
+    """
+
+    agent: str
+    provider: str
+    namespace: str
+    recalled_notes: int               # how much learned context the learning arm had
+    baseline: ProviderReport
+    learning: ProviderReport
+    deltas: list[MetricDelta]
+    verdict: str                      # improved | neutral | regressed (on accuracy)
