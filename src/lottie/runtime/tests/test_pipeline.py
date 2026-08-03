@@ -6,6 +6,7 @@ ordering, abort, cleanup-on-exception, and reverse post-phase order.
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Sequence
 
 import pytest
@@ -25,7 +26,7 @@ class _Output(BaseModel):
 
 
 def _hasher(model: BaseModel) -> str:
-    return f"h:{model.model_dump_json()}"
+    return hashlib.sha256(model.model_dump_json().encode()).hexdigest()
 
 
 def _core(data: _Input) -> _Output:

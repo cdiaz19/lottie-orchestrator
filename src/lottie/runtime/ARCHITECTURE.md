@@ -87,6 +87,17 @@ Two consequences, both pinned by tests rather than left to discipline:
 - `Pipeline` takes an injected `hasher` instead of importing
   `governance.audit.hash_model`.
 
+## The hasher is verified, not trusted
+
+D6 (events carry hashes, never raw content) is only as strong as the injected hasher, so
+`Pipeline` checks that every digest matches `^[0-9a-f]{64}$` before it reaches the bus and
+raises `UnsafeHasherError` otherwise. One regex per emission — negligible next to the LLM
+call it accompanies.
+
+This exists because lab Round 28 injected an echoing hasher (`f"h:{model_dump_json()}"`)
+and watched the raw payload land on the bus. The kernel enforced field *names* and *types*
+but had no way to know the "hash" was not a hash. It does now.
+
 ## Performance
 
 Recorded S1 baseline, 10 middleware + 3 subscribers: **0.00906 ms/run**.

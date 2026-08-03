@@ -36,7 +36,7 @@ class _Output(BaseModel):
 
 
 def _hasher(model: BaseModel) -> str:
-    return "h" * 64  # constant: this benchmark measures dispatch, not hashing
+    return "a" * 64  # constant valid-shaped digest: measures dispatch, not hashing
 
 
 def _core(data: _Input) -> _Output:

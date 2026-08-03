@@ -6,6 +6,7 @@ responsibilities: order the chain, and run it. Everything else is a mounted modu
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Callable, Sequence
 from time import perf_counter
@@ -27,6 +28,18 @@ from lottie.runtime.events import (
     RunStarted,
 )
 from lottie.runtime.middleware import Middleware
+
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+class UnsafeHasherError(RuntimeError):
+    """The injected hasher returned something that is not a sha256 digest.
+
+    D6 says events carry hashes, never raw content. That guarantee is only as strong as
+    the hasher, so it is VERIFIED rather than trusted: a hasher that echoes its input
+    would put raw payloads on a bus the Plugin SDK (E7) opens to third parties. Caught
+    by lab Round 28, which injected an echoing hasher and watched the payload leak.
+    """
 
 
 class Pipeline[InputT: BaseModel, OutputT: BaseModel]:
@@ -94,6 +107,22 @@ class Pipeline[InputT: BaseModel, OutputT: BaseModel]:
                 self._emit_blocked(ctx, entered, exc)
             raise
 
+    def _checked_hash(self, model: BaseModel) -> str:
+        """Hash `model`, verifying the result is actually a digest.
+
+        One regex per emission. Negligible next to the LLM call it accompanies, and it
+        converts D6 from a convention the caller must honour into a property the kernel
+        enforces.
+        """
+        digest = self._hasher(model)
+        if not _SHA256_RE.match(digest):
+            raise UnsafeHasherError(
+                "hasher did not return a sha256 hex digest; events must never carry raw "
+                "content (V3 spec D6). Got a "
+                f"{len(digest)}-character value."
+            )
+        return digest
+
     def _core_frame(self, ctx: ExecutionContext) -> BaseModel:
         """Innermost frame: run the real work, emit lifecycle events from HERE.
 
@@ -102,7 +131,7 @@ class Pipeline[InputT: BaseModel, OutputT: BaseModel]:
         records the real cost before the cost middleware's `finally` settles the
         reservation — the invariant documented at `core/base_agent.py:461-466`.
         """
-        input_hash = self._hasher(ctx.input)
+        input_hash = self._checked_hash(ctx.input)
         self._bus.emit(
             RunStarted(
                 run_id=ctx.run_id,
@@ -132,7 +161,7 @@ class Pipeline[InputT: BaseModel, OutputT: BaseModel]:
                 runnable=ctx.runnable,
                 kind=ctx.kind,
                 input_sha256=input_hash,
-                output_sha256=self._hasher(output),
+                output_sha256=self._checked_hash(output),
                 input_tokens=ctx.usage.input_tokens,
                 output_tokens=ctx.usage.output_tokens,
                 cost_usd=ctx.usage.cost_usd,
@@ -149,7 +178,7 @@ class Pipeline[InputT: BaseModel, OutputT: BaseModel]:
                 run_id=ctx.run_id,
                 runnable=ctx.runnable,
                 kind=ctx.kind,
-                input_sha256=self._hasher(ctx.input),
+                input_sha256=self._checked_hash(ctx.input),
                 blocked_by=entered[-1] if entered else "unknown",
                 error=str(exc),
             )

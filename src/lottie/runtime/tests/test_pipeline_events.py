@@ -7,6 +7,7 @@ before any middleware post-phase (cost settle). Today that ordering is hand-main
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Sequence
 
 import pytest
@@ -22,7 +23,7 @@ from lottie.runtime.events import (
     RunStarted,
 )
 from lottie.runtime.middleware import Middleware, Next
-from lottie.runtime.pipeline import Pipeline
+from lottie.runtime.pipeline import Pipeline, UnsafeHasherError
 
 
 class _Input(BaseModel):
@@ -34,7 +35,7 @@ class _Output(BaseModel):
 
 
 def _hasher(model: BaseModel) -> str:
-    return f"h:{model.model_dump_json()}"
+    return hashlib.sha256(model.model_dump_json().encode()).hexdigest()
 
 
 def _core(data: _Input) -> _Output:
@@ -207,3 +208,48 @@ class TestSubscriberIsolationEndToEnd:
         with pytest.warns(UserWarning):
             result = _pipe(bus).execute(_Input(text="hi"))
         assert result.text == "HI"
+
+
+class TestHasherIsVerified:
+    """D6 is only as strong as the hasher, so the kernel verifies rather than trusts.
+
+    Found by lab Round 28: an echoing hasher put the raw payload straight onto the bus,
+    which the Plugin SDK (E7) later opens to third parties.
+    """
+
+    def _echoing(self, model: BaseModel) -> str:
+        return f"h:{model.model_dump_json()}"
+
+    def test_an_echoing_hasher_is_rejected(self) -> None:
+        pipe: Pipeline[_Input, _Output] = Pipeline(
+            runnable="Demo", kind="agent", core=_core, hasher=self._echoing
+        )
+        with pytest.raises(UnsafeHasherError):
+            pipe.execute(_Input(text="SENSITIVE"))
+
+    def test_the_error_does_not_echo_the_payload(self) -> None:
+        pipe: Pipeline[_Input, _Output] = Pipeline(
+            runnable="Demo", kind="agent", core=_core, hasher=self._echoing
+        )
+        with pytest.raises(UnsafeHasherError) as exc:
+            pipe.execute(_Input(text="SENSITIVE"))
+        assert "SENSITIVE" not in str(exc.value)
+
+    def test_no_event_escapes_with_raw_content(self) -> None:
+        bus, rec = _bus_with_recorder()
+        pipe: Pipeline[_Input, _Output] = Pipeline(
+            runnable="Demo", kind="agent", core=_core, hasher=self._echoing, bus=bus
+        )
+        with pytest.raises(UnsafeHasherError):
+            pipe.execute(_Input(text="SENSITIVE"))
+        assert rec.seen == []
+
+    def test_a_truncated_digest_is_rejected(self) -> None:
+        pipe: Pipeline[_Input, _Output] = Pipeline(
+            runnable="Demo", kind="agent", core=_core, hasher=lambda m: "abc123"
+        )
+        with pytest.raises(UnsafeHasherError):
+            pipe.execute(_Input(text="x"))
+
+    def test_a_real_sha256_passes(self) -> None:
+        assert _pipe(EventBus()).execute(_Input(text="hi")).text == "HI"
