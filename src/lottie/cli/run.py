@@ -17,6 +17,7 @@ from lottie.project.discovery import (
 )
 from lottie.serve.errors import SecurityViolation
 from lottie.serve.security import SecurityGate
+from lottie.session.store import InvalidSessionId, SessionStore
 
 
 def run(
@@ -26,6 +27,10 @@ def run(
     ] = None,
     provider: Annotated[
         str | None, typer.Option("--provider", help="Override the LLM provider.")
+    ] = None,
+    session: Annotated[
+        str | None,
+        typer.Option("--session", help="Resume (or start) a named session for this agent."),
     ] = None,
 ) -> None:
     """Run an agent, printing its output as JSON."""
@@ -46,6 +51,13 @@ def run(
         )
     except Exception as exc:
         raise typer.BadParameter(f"cannot load agent '{name}': {exc}") from exc
+
+    if session is not None:
+        try:
+            agent.set_session(SessionStore(root), session)
+        except InvalidSessionId as exc:
+            raise typer.BadParameter(str(exc)) from exc
+
     try:
         result = agent.run(data)
     except SecurityViolation as exc:

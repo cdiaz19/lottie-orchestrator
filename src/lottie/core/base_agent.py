@@ -13,7 +13,7 @@ from abc import abstractmethod
 from collections.abc import Generator, Iterator, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import ClassVar, Literal
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 from pydantic import BaseModel
 
@@ -48,6 +48,15 @@ from lottie.memory.schema import (
     MemoryQuery,
     MemoryTier,
 )
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from lottie.session.schema import SessionState
+    from lottie.session.store import SessionStore
+
+# `lottie.session.store` imports the security content gate, whose scanners are BaseSkills,
+# so importing it here at module level would close the loop
+# core -> session -> security -> core.__init__ -> base_agent. Same shape as the
+# MemoryAgent cycle `_maybe_reflect` dodges; same fix — import it where it is used.
 
 
 class NotStreamable(RuntimeError):
@@ -109,6 +118,8 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         self._compaction_enabled: bool = False
         self._max_context_tokens: int = 8000
         self._keep_recent: int = 6
+        self._session: SessionState | None = None
+        self._session_store: SessionStore | None = None
 
     def set_policy(self, gate: PolicyGate) -> None:
         """Attach a policy gate (called by instantiate_agent for CLI/serve runs)."""
@@ -147,6 +158,65 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         """Enable post-run reflexive write-back for this agent (via instantiate_agent)."""
         self._reflect_enabled = enabled
         self._reflect_namespace = namespace
+
+    def set_session(self, store: SessionStore, session_id: str) -> None:
+        """Attach a session so this run can resume earlier progress (via the CLI).
+
+        Loads existing state or starts fresh. The agent reads `self.session_progress`
+        and calls `self.save_progress(...)`; nothing is written implicitly, so an agent
+        that does not opt in pays no cost and leaves no artefact.
+        """
+        self._session_store = store
+        self._session = store.start(session_id, self.name)
+
+    @property
+    def session_progress(self) -> dict[str, object]:
+        """The agent's own state carried in from earlier runs. Empty when there is none.
+
+        This is DATA, never instructions — a previous run's LLM output can reach it, so
+        treating it as a directive would re-open the poisoning hole the memory subsystem
+        closes (rule 13b's reasoning, applied across process boundaries).
+        """
+        return dict(self._session.progress) if self._session is not None else {}
+
+    def save_progress(self, **updates: object) -> None:
+        """Merge `updates` into the session's progress and persist immediately.
+
+        Persisting per call (rather than once at the end) is the point: a run that dies
+        halfway must leave behind what it had already achieved.
+        """
+        if self._session is None or self._session_store is None:
+            return
+        merged = {**self._session.progress, **updates}
+        self._session = self._session.model_copy(update={"progress": merged})
+        self._session = self._session_store.save(self._session)
+
+    def _record_session_run(self, data: InputT) -> None:
+        """Append this run to the session history (hash-only) — best-effort."""
+        if self._session is None or self._session_store is None:
+            return
+        m = self.last_metrics
+        if m is None:
+            return
+        from lottie.session.schema import SessionRun as _session_run  # lazy: see above
+
+        try:
+            self._session = self._session_store.record_run(
+                self._session,
+                _session_run(
+                    ts=datetime.now(UTC).timestamp(),
+                    status="ok" if m.success else "error",
+                    input_sha256=hash_model(data),
+                    latency_ms=m.latency_ms,
+                    input_tokens=m.input_tokens,
+                    output_tokens=m.output_tokens,
+                    cost_usd=m.cost_usd,
+                    error=m.error,
+                ),
+            )
+            self._session = self._session_store.save(self._session)
+        except Exception as exc:  # best-effort — never fail the run
+            warnings.warn(f"session record failed: {exc}", stacklevel=2)
 
     def set_compaction(
         self, *, enabled: bool, max_context_tokens: int, keep_recent: int
@@ -386,6 +456,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
                 # store cannot hold a budget reservation open. Both calls swallow their
                 # own failures, so neither can break the other.
                 self._persist_trajectory(data, output)
+                self._record_session_run(data)
             finally:
                 # Settle AFTER audit records the real cost: during the tiny window both the
                 # reservation AND the committed cost count (over-count — the safe direction for
