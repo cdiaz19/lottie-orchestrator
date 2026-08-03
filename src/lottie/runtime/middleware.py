@@ -14,7 +14,7 @@ See V3 spec section 4.5; `test_middleware.py` pins the relationships that matter
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
@@ -29,10 +29,13 @@ Typed as `BaseModel` rather than `Any`: every runnable output is a pydantic mode
 """
 
 
+@runtime_checkable
 class Middleware(Protocol):
     """One lifecycle hook. Lower `order` runs earlier in the pre-phase.
 
-    Structural — a middleware never inherits from this.
+    Structural — a middleware never inherits from this. `runtime_checkable` so the
+    registry can tell a middleware from a subscriber: the discriminator is `order`,
+    which a subscriber does not have.
     """
 
     name: str
