@@ -155,3 +155,40 @@ def test_clean_project_has_no_learning_warnings(
     _project_with_agent(tmp_path, monkeypatch, {})
     out = runner.invoke(app, ["doctor"]).output
     assert "unbounded" not in out and "never consulted" not in out
+
+
+def test_no_learning_warnings_without_an_agents_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A project can exist before any agent does; doctor must not trip over that.
+    monkeypatch.chdir(tmp_path)
+    assert runner.invoke(app, ["init", "demo"]).exit_code == 0
+    root = tmp_path / "demo"
+    import shutil
+
+    shutil.rmtree(root / "agents", ignore_errors=True)
+    monkeypatch.chdir(root)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    assert runner.invoke(app, ["doctor"]).exit_code == 0
+
+
+def test_a_malformed_agent_config_is_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A broken config is `lottie status`'s problem to report; doctor must not crash on it.
+    _project_with_agent(tmp_path, monkeypatch, {})
+    (Path.cwd() / "agents" / "probe" / "config.yaml").write_text("{{{ not yaml")
+    result = runner.invoke(app, ["doctor"])
+    assert result.exit_code == 0, result.output
+
+
+def test_warns_on_a_keep_recent_below_the_floor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _project_with_agent(
+        tmp_path,
+        monkeypatch,
+        {"harness": {"compaction": {"enabled": True, "keep_recent": 0}}},
+    )
+    assert "droppable" in runner.invoke(app, ["doctor"]).output
