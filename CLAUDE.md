@@ -118,6 +118,8 @@ lottie inspect skill <name>            # schema, SKILL.md presence
 # Running
 lottie run <agent>                     # run an agent
 lottie run <agent> --provider openai   # override provider for this run
+lottie run <agent> --session <id>      # resume/continue a long-running session
+lottie session list|show|delete        # inspect session artifacts (.lottie/sessions/)
 lottie serve                           # start the MCP stdio server (one tool per agent)
 lottie serve --port 8000               # HTTP API: OpenAI-compat (/v1/chat/completions, /v1/models)
                                        #   + Lottie REST (/v1/agents, /v1/agents/{name}/run) — needs [api]

@@ -21,6 +21,7 @@ from lottie.cli.reflect import reflect
 from lottie.cli.registry import inspect_app, list_app
 from lottie.cli.run import run
 from lottie.cli.serve import serve
+from lottie.cli.session import session_app
 from lottie.cli.status import status
 
 app = typer.Typer(
@@ -49,6 +50,7 @@ app.add_typer(inspect_app, name="inspect")
 app.command("reflect")(reflect)
 app.command("run")(run)
 app.command("serve")(serve)
+app.add_typer(session_app, name="session")
 app.command("status")(status)
 app.command("audit")(audit)
 app.command("doctor")(doctor)

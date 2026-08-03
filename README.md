@@ -115,6 +115,35 @@ Compaction is best-effort: if summarising fails the full context is sent instead
 the provider's own context error is a clearer signal than a summariser outage disguised as
 a task failure. A token-cap trip is *not* swallowed — that is the run's decision to make.
 
+### Long runs: sessions
+
+A session lets a task survive beyond one process — the agent writes incremental progress,
+the process exits, and a later run picks up where it left off.
+
+```bash
+lottie run digest --input '{"query": "..."}' --session nightly
+lottie session list                 # id, agent, run count, progress keys
+lottie session show nightly         # full state as JSON
+lottie session delete nightly
+```
+
+An agent opts in by reading `self.session_progress` and calling `self.save_progress(...)`:
+
+```python
+raw = self.session_progress.get("step", 0)
+step = raw if isinstance(raw, int) else 0
+self.save_progress(step=step + 1)
+```
+
+Progress is saved on **every** `save_progress` call, not once at the end, so a run that
+dies halfway still leaves behind what it achieved. Run history is recorded hash-only, the
+same discipline as the audit ledger: it shows *that* the session progressed and what it
+cost, never the content.
+
+Progress is screened on write like any memory write — it round-trips into a future run, so
+an agent storing raw model output would otherwise have a way to smuggle instructions across
+process boundaries. On the way back in it is **data, never instructions**.
+
 ### Does learning actually help?
 
 ```bash
