@@ -607,7 +607,7 @@ Small task, but it defines the contract Tasks 4–6 build against, and a reviewe
 
 **Interfaces:**
 - Consumes: `ExecutionContext` from `lottie.runtime.context`.
-- Produces: `Next` (`Callable[[ExecutionContext], BaseModel]`), `Middleware` Protocol (`name: str`, `order: int`, `__call__(ctx: ExecutionContext, nxt: Next) -> BaseModel`), `Order` (int constants: `SECURITY_INPUT=10`, `POLICY=20`, `COST=30`, `DEPTH=40`, `CAPABILITY=50`, `RECALL=60`, `REFLECT=70`, `SECURITY_OUTPUT=75`, `VERIFY=80`).
+- Produces: `Next` (`Callable[[ExecutionContext], BaseModel]`), `Middleware` Protocol (`name: str`, `order: int`, `__call__(ctx: ExecutionContext, nxt: Next) -> BaseModel`), `Order` (int constants: `SECURITY_INPUT=10`, `POLICY=20`, `COST=30`, `SESSION=34`, `TRAJECTORY=36`, `DEPTH=40`, `CAPABILITY=50`, `RECALL=60`, `REFLECT=70`, `SECURITY_OUTPUT=75`, `VERIFY=80`).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -618,6 +618,18 @@ Create `src/lottie/runtime/tests/test_middleware.py`:
 
 The order values are not arbitrary: unrolled through onion nesting they must reproduce
 `BaseAgent.run`'s existing sequence exactly (V3 spec section 4.5). S2 depends on that.
+
+> **Re-verified 2026-08-03, against v2.0.0.** This plan predates V2 S3a and S5b, which each
+> appended a step to `run()`'s post-audit block — `_persist_trajectory` then
+> `_record_session_run`, both between `_write_audit` and `_cost.settle`. Post-phases unroll
+> in reverse order, so both need an order strictly **between Cost (30) and Depth (40)**, and
+> Trajectory must sit *outside* Session to preserve their relative order. Hence 34/36. This
+> is precisely the drift the plan warned about; re-check against `base_agent.py` if further
+> slices land before S2.
+>
+> **Compaction is deliberately absent.** `_maybe_compact` lives inside `complete()`, so it
+> is a per-completion concern, not a run-lifecycle step. It becomes an E4 Context Compiler
+> transform (V3 spec section 1.1), never a middleware.
 """
 
 from __future__ import annotations
@@ -654,6 +666,8 @@ class TestOrderTable:
             Order.SECURITY_INPUT,
             Order.POLICY,
             Order.COST,
+            Order.SESSION,
+            Order.TRAJECTORY,
             Order.DEPTH,
             Order.CAPABILITY,
             Order.RECALL,
@@ -665,6 +679,8 @@ class TestOrderTable:
                 Order.SECURITY_INPUT,
                 Order.POLICY,
                 Order.COST,
+                Order.SESSION,
+                Order.TRAJECTORY,
                 Order.DEPTH,
                 Order.CAPABILITY,
                 Order.RECALL,
@@ -679,6 +695,8 @@ class TestOrderTable:
             Order.SECURITY_INPUT,
             Order.POLICY,
             Order.COST,
+            Order.SESSION,
+            Order.TRAJECTORY,
             Order.DEPTH,
             Order.CAPABILITY,
             Order.RECALL,
@@ -762,15 +780,18 @@ class Order:
         check_input -> policy -> reserve -> depth -> capability -> recall
           -> [core frame: run + emit RunCompleted]
           -> verify -> check_output -> reflect -> recall clear
-          -> capability reset -> depth reset -> cost settle
+          -> capability reset -> depth reset
+          -> trajectory -> session -> cost settle
 
-    which is `core/base_agent.py:231-266`. Third-party modules (E7) pick values between
+    which is `core/base_agent.py:427-467`. Third-party modules (E7) pick values between
     these; the registry rejects collisions at registration.
     """
 
     SECURITY_INPUT = 10
     POLICY = 20
     COST = 30
+    SESSION = 34
+    TRAJECTORY = 36
     DEPTH = 40
     CAPABILITY = 50
     RECALL = 60
