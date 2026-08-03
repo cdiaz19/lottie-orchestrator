@@ -9,7 +9,7 @@ import sys
 import typer
 from rich.console import Console
 
-from lottie.project.config import find_project_root, load_lottie_config
+from lottie.project.config import find_project_root, load_agent_config, load_lottie_config
 
 # Provider prefix -> required env var. None means no key needed (e.g. local).
 _PROVIDER_ENV: dict[str, str | None] = {
@@ -38,6 +38,7 @@ def doctor() -> None:
     checks.extend(project_checks)
     warnings.extend(project_warnings)
     warnings.extend(_hardening_warnings())
+    warnings.extend(_learning_warnings())
 
     _render(Console(), checks, warnings)
     if any(not ok for _, ok, _ in checks):
@@ -69,6 +70,53 @@ def _project_checks() -> tuple[list[Check], list[str]]:
             present = bool(os.environ.get(env))
             checks.append((f"key: {env}", present, "set" if present else "MISSING"))
     return checks, warnings
+
+
+def _learning_warnings() -> list[str]:
+    """Advisory checks for the V2 self-learning config (all opt-in; unset = off).
+
+    These surface the two combinations that are easy to configure and expensive to get
+    wrong: unbounded reflection spend, and a store that has grown without ever being
+    consulted.
+    """
+    warnings: list[str] = []
+    try:
+        root = find_project_root()
+    except typer.BadParameter:
+        return warnings
+
+    agents_dir = root / "agents"
+    if not agents_dir.is_dir():
+        return warnings
+
+    for agent_dir in sorted(p for p in agents_dir.iterdir() if (p / "config.yaml").is_file()):
+        try:
+            cfg = load_agent_config(agent_dir)
+        except Exception:  # a malformed config is `lottie status`'s problem, not doctor's
+            continue
+        name = agent_dir.name
+        memory = cfg.memory
+        if memory.reflect.enabled and cfg.max_run_tokens is None:
+            warnings.append(
+                f"agent '{name}': memory.reflect is on without max_run_tokens — "
+                "reflection spend is unbounded per run."
+            )
+        if memory.trajectory.enabled and not memory.enabled:
+            warnings.append(
+                f"agent '{name}': memory.trajectory is on but memory.enabled is false — "
+                "no trajectories will be written."
+            )
+        if memory.trajectory.enabled and not (memory.reflect.enabled or memory.recall.enabled):
+            warnings.append(
+                f"agent '{name}': trajectories are being written but never consulted "
+                "(recall and reflect are both off) — the store will grow unused."
+            )
+        if cfg.harness.compaction.enabled and cfg.harness.compaction.keep_recent < 1:
+            warnings.append(
+                f"agent '{name}': harness.compaction.keep_recent < 1 — the task itself "
+                "would be droppable (it is floored at 1 at runtime)."
+            )
+    return warnings
 
 
 def _hardening_warnings() -> list[str]:
