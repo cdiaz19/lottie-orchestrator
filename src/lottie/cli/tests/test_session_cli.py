@@ -122,5 +122,11 @@ class TestSessionCli:
     def test_delete_reports_a_missing_session(self, project: Path) -> None:
         assert "no session named" in runner.invoke(app, ["session", "delete", "ghost"]).output
 
-    def test_traversal_is_refused_by_the_cli(self, project: Path) -> None:
+    def test_traversal_is_refused_by_show(self, project: Path) -> None:
         assert runner.invoke(app, ["session", "show", "../../etc"]).exit_code != 0
+
+    def test_traversal_is_refused_by_delete(self, project: Path) -> None:
+        # `delete` removes a directory tree, so an unguarded id here is the most
+        # dangerous of the three commands.
+        result = runner.invoke(app, ["session", "delete", "../../etc"])
+        assert result.exit_code != 0
