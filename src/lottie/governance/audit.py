@@ -204,3 +204,15 @@ def build_audit_logger(root: Path) -> AuditLogger:
     if os.getenv("LOTTIE_DISABLE_AUDIT", "").lower() in _DISABLE_VALUES:
         return NullAuditLogger()
     return SqliteAuditLogger(Path(root))
+
+
+def hash_model_str(model: BaseModel) -> str:
+    """`hash_model` with a non-optional return, for callers that always pass a model.
+
+    The V3 kernel verifies that every event digest is a real sha256 (spec D6), so it
+    needs a hasher whose type says it always produces one.
+    """
+    digest = hash_model(model)
+    if digest is None:  # pragma: no cover - hash_model(None) is the only None path
+        raise ValueError("hash_model_str requires a model")
+    return digest
