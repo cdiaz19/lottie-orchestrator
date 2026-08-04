@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import re
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Generator, Sequence
+from contextlib import ExitStack
 from time import perf_counter
 from typing import cast
 
@@ -27,7 +28,7 @@ from lottie.runtime.events import (
     RunFailed,
     RunStarted,
 )
-from lottie.runtime.middleware import Middleware
+from lottie.runtime.middleware import Middleware, ScopedMiddleware, StreamCore
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
@@ -106,6 +107,34 @@ class Pipeline[InputT: BaseModel, OutputT: BaseModel]:
                 # A gate refused before the work ever started — today's `_write_block`.
                 self._emit_blocked(ctx, entered, exc)
             raise
+
+    def execute_stream(self, data: InputT, core: StreamCore) -> Generator[str, None, None]:
+        """Run `core`'s deltas through the SCOPED subset of the chain.
+
+        Only middleware offering `scope` participate — the ones whose whole effect is a
+        scope. `verify`, `check_output` and `reflect` need an output value and are
+        therefore absent, which matches `run_stream`'s existing behaviour exactly.
+
+        `ExitStack` is what makes this correct: the `with` spans generator consumption,
+        so a cost reservation is settled after the last delta rather than at generator
+        creation, and the stack unwinds in reverse — onion post-order, for free.
+        """
+        ctx = ExecutionContext(
+            runnable=self._runnable,
+            kind=self._kind,
+            input=data,
+            run_id=uuid.uuid4().hex,
+            usage=self._usage_factory(),
+        )
+        scoped = [m for m in self._chain if isinstance(m, ScopedMiddleware)]
+        with ExitStack() as stack:
+            for mw in scoped:
+                stack.enter_context(mw.scope(ctx))
+            yield from core(ctx)
+
+    def scoped_names(self) -> list[str]:
+        """Names of the middleware that participate in a streaming chain, in order."""
+        return [m.name for m in self._chain if isinstance(m, ScopedMiddleware)]
 
     def _checked_hash(self, model: BaseModel) -> str:
         """Hash `model`, verifying the result is actually a digest.

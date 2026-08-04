@@ -13,6 +13,8 @@ enough to bisect.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Protocol
 
 from pydantic import BaseModel
@@ -59,7 +61,7 @@ class PolicyMiddleware:
     def __init__(self, agent: BaseAgent[BaseModel, BaseModel]) -> None:
         self._agent = agent
 
-    def __call__(self, ctx: ExecutionContext, nxt: Next) -> BaseModel:
+    def _check(self, ctx: ExecutionContext) -> None:
         try:
             self._agent._policy.check()
         except PolicyViolation as exc:
@@ -67,7 +69,15 @@ class PolicyMiddleware:
                 ctx.input, exc, "escalated" if isinstance(exc, PolicyEscalation) else "denied"
             )
             raise
+
+    def __call__(self, ctx: ExecutionContext, nxt: Next) -> BaseModel:
+        self._check(ctx)
         return nxt(ctx)
+
+    @contextmanager
+    def scope(self, ctx: ExecutionContext) -> Iterator[None]:
+        self._check(ctx)
+        yield
 
 
 class CostMiddleware:
@@ -79,18 +89,35 @@ class CostMiddleware:
     def __init__(self, agent: BaseAgent[BaseModel, BaseModel]) -> None:
         self._agent = agent
 
-    def __call__(self, ctx: ExecutionContext, nxt: Next) -> BaseModel:
+    def _reserve(self, ctx: ExecutionContext) -> int | None:
         try:
-            handle = self._agent._cost.reserve()
+            return self._agent._cost.reserve()
         except BudgetExceeded as exc:
             self._agent._write_block(ctx.input, exc, "budget_exceeded")
             raise
+
+    def __call__(self, ctx: ExecutionContext, nxt: Next) -> BaseModel:
+        handle = self._reserve(ctx)
         try:
             return nxt(ctx)
         finally:
             # Settles AFTER audit (order 38 posts first): during the tiny window both the
             # reservation and the committed cost count, which over-counts — the safe
             # direction for a budget gate.
+            self._agent._cost.settle(handle)
+
+    @contextmanager
+    def scope(self, ctx: ExecutionContext) -> Iterator[None]:
+        """Streaming form: the reservation is held for the WHOLE stream.
+
+        This is the reason `ScopedMiddleware` exists. Under the plain `__call__` contract
+        the `finally` would fire when the generator object was created, settling the
+        budget before a single delta was produced.
+        """
+        handle = self._reserve(ctx)
+        try:
+            yield
+        finally:
             self._agent._cost.settle(handle)
 
 
@@ -148,6 +175,16 @@ class AuditMiddleware:
             is_root = bool(ctx.scoped("depth").get("is_root", False))
             self._agent._write_audit(ctx.input, output, is_root)
 
+    @contextmanager
+    def scope(self, ctx: ExecutionContext) -> Iterator[None]:
+        """Streaming form. `output=None` — a stream has no single typed Output, which is
+        exactly what `run_stream` recorded before the swap-in."""
+        try:
+            yield
+        finally:
+            is_root = bool(ctx.scoped("depth").get("is_root", False))
+            self._agent._write_audit(ctx.input, None, is_root)
+
 
 class DepthMiddleware:
     """Run-depth tracking for the audit `root` flag.
@@ -163,12 +200,17 @@ class DepthMiddleware:
         self._agent = agent
 
     def __call__(self, ctx: ExecutionContext, nxt: Next) -> BaseModel:
+        with self.scope(ctx):
+            return nxt(ctx)
+
+    @contextmanager
+    def scope(self, ctx: ExecutionContext) -> Iterator[None]:
         from lottie.core.base_agent import _audit_depth, _depth
 
         token = _audit_depth.set(_depth() + 1)
         ctx.scoped("depth")["is_root"] = _depth() == 1
         try:
-            return nxt(ctx)
+            yield
         finally:
             _audit_depth.reset(token)
 
@@ -252,9 +294,14 @@ class CapabilityMiddleware:
         self._agent = agent
 
     def __call__(self, ctx: ExecutionContext, nxt: Next) -> BaseModel:
+        with self.scope(ctx):
+            return nxt(ctx)
+
+    @contextmanager
+    def scope(self, ctx: ExecutionContext) -> Iterator[None]:
         token = _active_capabilities.set(self._agent._capabilities)
         try:
-            return nxt(ctx)
+            yield
         finally:
             _active_capabilities.reset(token)
 
