@@ -13,7 +13,8 @@ See V3 spec section 4.5; `test_middleware.py` pins the relationships that matter
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager
 from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel
@@ -42,6 +43,40 @@ class Middleware(Protocol):
     order: int
 
     def __call__(self, ctx: ExecutionContext, nxt: Next) -> BaseModel: ...
+
+
+@runtime_checkable
+class ScopedMiddleware(Protocol):
+    """A middleware whose entire effect is a SCOPE — enter on the way in, exit on the way out.
+
+    Why this exists
+    ---------------
+    The `Middleware` contract above cannot express streaming. A middleware is
+    `pre; try: return nxt(ctx); finally: post`, so if `nxt` hands back a *generator
+    object* the `finally` fires the moment that generator is CREATED — before a single
+    delta is consumed. Cost would settle and the capability gate would reset while the
+    stream was still producing.
+
+    A context manager has no such problem: a `with` block spans consumption, and
+    `ExitStack` unwinds in reverse, which is exactly onion post-order.
+
+    Not every concern qualifies. `verify`, `check_output` and `reflect` need the OUTPUT
+    VALUE, which `__exit__` never receives — those stay `__call__`-only and simply do not
+    participate in a streaming chain, matching `run_stream`'s existing behaviour of
+    skipping them.
+
+    Implementing this is ADDITIVE: a middleware may offer `scope` in addition to
+    `__call__`, and `Pipeline.execute_stream` mounts only the ones that do.
+    """
+
+    name: str
+    order: int
+
+    def scope(self, ctx: ExecutionContext) -> AbstractContextManager[None]: ...
+
+
+type StreamCore = Callable[[ExecutionContext], Iterator[str]]
+"""The innermost frame of a streaming chain: produces deltas rather than an Output."""
 
 
 class Order:

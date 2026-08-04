@@ -29,11 +29,10 @@ from lottie.governance.audit import (
 from lottie.governance.capability import (
     CapabilityGate,
     NullCapabilityGate,
-    _active_capabilities,
 )
-from lottie.governance.cost import BudgetExceeded, CostGate, NullCostGate, TokenCapExceeded
+from lottie.governance.cost import CostGate, NullCostGate, TokenCapExceeded
 from lottie.governance.otel import run_span
-from lottie.governance.policy import NullPolicyGate, PolicyEscalation, PolicyGate, PolicyViolation
+from lottie.governance.policy import NullPolicyGate, PolicyGate
 from lottie.governance.schema import AuditRecord
 from lottie.llm import LLMProvider, LLMResponse, Message
 from lottie.llm.base import StreamResult
@@ -412,24 +411,6 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
     def provider(self) -> str | None:
         return self.llm.model
 
-    def _pre_run_gates(self, data: InputT) -> int | None:
-        """Policy check then budget reservation; audit a block and re-raise if either trips.
-
-        Returns the cost-reservation handle (or None) for the caller to settle after the run.
-        Shared by run and run_stream.
-        """
-        try:
-            self._policy.check()       # capability policy — checked FIRST (no I/O)
-            return self._cost.reserve()  # budget — atomically reserve (or legacy check)
-        except PolicyViolation as exc:
-            self._write_block(
-                data, exc, "escalated" if isinstance(exc, PolicyEscalation) else "denied"
-            )
-            raise
-        except BudgetExceeded as exc:
-            self._write_block(data, exc, "budget_exceeded")
-            raise
-
     def _build_pipeline(self) -> Pipeline[InputT, OutputT]:
         """Compose the standard middleware chain around this agent's instrumented run.
 
@@ -456,29 +437,22 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         return self._build_pipeline().execute(data)
 
     def run_stream(self, data: InputT) -> Generator[str, None, None]:
-        """Streaming analog of run(): same policy/cost pre-gates, instrumented stream, audit post.
+        """Streaming analog of run(): the SCOPED subset of the same chain.
 
-        Returned as `Generator` so the 3b transport can `.close()` it to cancel. The pre-gates run
-        on the first `next()`, before any delta, so a deny/over-budget raises before the first
-        piece; nothing runs if the generator is never iterated. The output security gate is NOT
-        here — it wraps the deltas at the serve boundary (slice 3b), like the non-streaming gate.
+        Returned as `Generator` so the 3b transport can `.close()` it to cancel. The
+        pre-gates run on the first `next()`, before any delta, so a deny/over-budget
+        raises before the first piece; nothing runs if the generator is never iterated.
+
+        Shares `run()`'s middleware instances — only the middleware that offer `scope`
+        participate, which is precisely the set `run_stream` used inline before: policy,
+        cost, audit, depth, capability. `verify`, `check_output` and `reflect` need an
+        output value and are correctly absent; the output security gate wraps the deltas
+        at the serve boundary instead (slice 3b), as it always has.
         """
-        handle = self._pre_run_gates(data)  # policy + atomic budget reservation
-        token = _audit_depth.set(_depth() + 1)
-        is_root = _depth() == 1
-        try:
-            cap_token = _active_capabilities.set(self._capabilities)
-            try:
-                yield from self._instrument_stream(self._stream(data))
-            finally:
-                _active_capabilities.reset(cap_token)
-        finally:
-            try:
-                # output=None: a stream has no single typed Output
-                self._write_audit(data, None, is_root)
-            finally:
-                self._cost.settle(handle)
-                _audit_depth.reset(token)
+        pipeline = self._build_pipeline()
+        yield from pipeline.execute_stream(
+            data, lambda ctx: self._instrument_stream(self._stream(data))
+        )
 
     def _write_block(
         self,
