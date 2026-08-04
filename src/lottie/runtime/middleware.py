@@ -49,18 +49,38 @@ class Order:
 
     Unrolled, the standard chain produces:
 
-        check_input -> policy -> reserve -> depth -> capability -> recall
-          -> [core frame: run + emit RunCompleted]
-          -> verify -> check_output -> reflect -> recall clear
-          -> capability reset -> depth reset
-          -> trajectory -> session -> cost settle
+        pre :  check_input -> policy -> reserve -> depth set -> recall load -> cap set
+        core:  [run + emit RunStarted/RunCompleted]
+        post:  cap reset -> verify -> check_output -> reflect -> recall clear
+               -> depth reset -> audit -> trajectory -> session -> cost settle
 
-    which is `core/base_agent.py:427-467` as of v2.0.0.
+    which reproduces `core/base_agent.py`'s sequence as of v2.0.0, with two deliberate
+    and provably unobservable deviations (see below).
 
-    TRAJECTORY and SESSION sit between COST and DEPTH because their work happens in the
-    POST phase, which unrolls in reverse: a higher order means an earlier post-phase.
-    Both must land after the depth reset and before the cost settle, and Trajectory must
-    be outside Session to keep them in their current relative order.
+    Why these values
+    ----------------
+    * `CAPABILITY` is the INNERMOST (90), not 50. Today `_active_capabilities` is reset
+      immediately after `_execute`, BEFORE `_verify`. `_verify` is user code that may call
+      a skill, so leaving the gate active there would change rule-11 enforcement. Post
+      phases unroll in reverse, so the capability middleware must be innermost to reset
+      first.
+    * `AUDIT` (38) sits above `TRAJECTORY` (36) above `SESSION` (34) above `COST` (30), so
+      the post phase unrolls audit -> trajectory -> session -> settle. Audit-before-settle
+      is the load-bearing invariant documented in `BaseAgent.run`.
+    * `DEPTH` (40) must be greater than `COST` (30) in the PRE phase: if the depth counter
+      were incremented before the budget gate ran, a denied top-level run would be audited
+      `root=False` by `_write_block`, which reads `_depth() == 0`.
+
+    Two accepted deviations
+    -----------------------
+    `run()`'s current interleaving cannot be expressed as a pure onion with one middleware
+    per concern: the pre phase needs COST < DEPTH, while the post phase would need
+    DEPTH < COST for the depth reset to follow the cost settle. Both are unobservable and
+    are accepted rather than splitting Depth into two modules:
+
+    1. `depth set` moves before `recall load` — `_load_recall` never reads the depth.
+    2. `depth reset` moves before `audit` — `CostGate.settle` never reads the depth, and
+       `_write_audit` receives `is_root` as a captured parameter rather than re-reading it.
 
     Third-party modules (E7) pick values between these; the registry rejects collisions
     at registration.
@@ -71,9 +91,10 @@ class Order:
     COST = 30
     SESSION = 34
     TRAJECTORY = 36
+    AUDIT = 38
     DEPTH = 40
-    CAPABILITY = 50
     RECALL = 60
     REFLECT = 70
     SECURITY_OUTPUT = 75
     VERIFY = 80
+    CAPABILITY = 90

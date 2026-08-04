@@ -17,12 +17,13 @@ ALL_ORDERS = [
     Order.COST,
     Order.SESSION,
     Order.TRAJECTORY,
+    Order.AUDIT,
     Order.DEPTH,
-    Order.CAPABILITY,
     Order.RECALL,
     Order.REFLECT,
     Order.SECURITY_OUTPUT,
     Order.VERIFY,
+    Order.CAPABILITY,
 ]
 
 
@@ -55,10 +56,25 @@ class TestOrderTable:
         # `_verify -> check_output -> _maybe_reflect` requires VERIFY > SECURITY_OUTPUT > REFLECT.
         assert Order.VERIFY > Order.SECURITY_OUTPUT > Order.REFLECT
 
-    def test_cost_settles_outside_capability_and_depth_cleanup(self) -> None:
-        # Cost's `finally` must be the outermost of the three, matching today's
-        # `_cost.settle(handle)` running last in BaseAgent.run.
+    def test_cost_settles_outside_depth_and_capability_cleanup(self) -> None:
+        # Cost's `finally` must be the outermost, matching `_cost.settle(handle)` running
+        # last in BaseAgent.run.
         assert Order.COST < Order.DEPTH < Order.CAPABILITY
+
+    def test_capability_is_the_innermost_middleware(self) -> None:
+        # `_active_capabilities` is reset BEFORE `_verify` today. `_verify` is user code
+        # that may call a skill, so leaving the gate active there would change rule-11
+        # enforcement. Innermost == resets first in the reversed post phase.
+        assert max(ALL_ORDERS) == Order.CAPABILITY
+
+    def test_audit_posts_before_trajectory_session_and_settle(self) -> None:
+        # Audit-before-settle is the load-bearing invariant in BaseAgent.run.
+        assert Order.AUDIT > Order.TRAJECTORY > Order.SESSION > Order.COST
+
+    def test_depth_is_set_after_the_budget_gate(self) -> None:
+        # If depth were incremented before the budget gate, a denied top-level run would
+        # be audited root=False — `_write_block` reads `_depth() == 0`.
+        assert Order.COST < Order.DEPTH
 
     def test_trajectory_and_session_post_between_depth_reset_and_cost_settle(self) -> None:
         # v2.0.0 added `_persist_trajectory` then `_record_session_run` after the audit

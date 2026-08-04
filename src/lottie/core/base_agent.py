@@ -20,7 +20,12 @@ from pydantic import BaseModel
 from lottie.core.metrics import Kind, RunContext
 from lottie.core.runnable import InstrumentedRunnable
 from lottie.core.security_gate import NullSecurityGate, SecurityGateProtocol
-from lottie.governance.audit import AuditLogger, build_audit_logger, hash_model
+from lottie.governance.audit import (
+    AuditLogger,
+    build_audit_logger,
+    hash_model,
+    hash_model_str,
+)
 from lottie.governance.capability import (
     CapabilityGate,
     NullCapabilityGate,
@@ -48,6 +53,7 @@ from lottie.memory.schema import (
     MemoryQuery,
     MemoryTier,
 )
+from lottie.runtime.pipeline import Pipeline
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from lottie.session.schema import SessionState
@@ -424,47 +430,30 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
             self._write_block(data, exc, "budget_exceeded")
             raise
 
-    def run(self, data: InputT) -> OutputT:
-        """Security input gate, policy + budget pre-checks, instrumented run, output gate, audit.
+    def _build_pipeline(self) -> Pipeline[InputT, OutputT]:
+        """Compose the standard middleware chain around this agent's instrumented run.
 
-        The security gate (rules 8 & 9) is a no-op by default and injected on gated paths
-        (`instantiate_agent(security_gate=...)` — the CLI). Its checks run OUTSIDE the
-        capability `_execute` window, so the gate's own security skills stay exempt (S1)."""
-        self._security.check_input(data.model_dump_json())  # rule 8: screen input first
-        handle = self._pre_run_gates(data)  # policy + atomic budget reservation
-        self._load_recall()  # best-effort recall-as-data before _execute
-        token = _audit_depth.set(_depth() + 1)
-        is_root = _depth() == 1
-        output: OutputT | None = None
-        try:
-            # Capability gate active only for THIS agent's `_execute` window, so
-            # framework skills invoked outside it (e.g. the security gate) are exempt.
-            cap_token = _active_capabilities.set(self._capabilities)
-            try:
-                output = super().run(data)
-            finally:
-                _active_capabilities.reset(cap_token)
-            self._verify(data, output)  # agent post-condition (fail-closed) before success
-            self._security.check_output(output.model_dump_json())  # rule 9: screen output
-            self._maybe_reflect(data, output)  # best-effort post-run reflexive write-back
-            return output
-        finally:
-            self._recall_prefix = ""  # clear before the audit/settle finally block
-            try:
-                self._write_audit(data, output, is_root)
-                # After audit so the ledger stays authoritative, before settle so a slow
-                # store cannot hold a budget reservation open. Both calls swallow their
-                # own failures, so neither can break the other.
-                self._persist_trajectory(data, output)
-                self._record_session_run(data)
-            finally:
-                # Settle AFTER audit records the real cost: during the tiny window both the
-                # reservation AND the committed cost count (over-count — the safe direction for
-                # a budget gate). Cost accounting relies on audit.log() succeeding (it is the
-                # ledger); if that best-effort write fails, budget tracking degrades as it does
-                # for any audit-backed gate — an inherent, documented property.
-                self._cost.settle(handle)
-                _audit_depth.reset(token)
+        The `core` is `InstrumentedRunnable.run` — timing, OTel span, metrics, `_execute`.
+        Everything wrapped around it is a mounted module (V3 S2).
+        """
+        from lottie.core.middleware import STANDARD_CHAIN
+
+        return Pipeline(
+            runnable=self.name,
+            kind=self.kind,
+            core=lambda data: InstrumentedRunnable.run(self, data),
+            hasher=hash_model_str,
+            middleware=[cls(self) for cls in STANDARD_CHAIN],  # type: ignore[arg-type]
+        )
+
+    def run(self, data: InputT) -> OutputT:
+        """Execute the governed middleware chain around this agent's run.
+
+        Was a hand-sequenced list of cross-cutting steps; is now one line over a chain
+        whose order is declared in `runtime.middleware.Order`. Behaviour is unchanged —
+        see that module's docstring for the two deliberate, unobservable deviations.
+        """
+        return self._build_pipeline().execute(data)
 
     def run_stream(self, data: InputT) -> Generator[str, None, None]:
         """Streaming analog of run(): same policy/cost pre-gates, instrumented stream, audit post.
