@@ -477,29 +477,6 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         except Exception as e:  # never let auditing convert/suppress the block
             warnings.warn(f"block audit failed: {e}", stacklevel=2)
 
-    def _write_audit(self, data: InputT, output: OutputT | None, is_root: bool) -> None:
-        m = self.last_metrics
-        if m is None:  # super().run always sets it, but stay defensive
-            return
-        try:
-            record = AuditRecord(
-                ts=m.timestamp.isoformat(),
-                agent=m.name,
-                provider=m.provider,
-                status="ok" if m.success else "error",
-                root=is_root,
-                input_sha256=hash_model(data),
-                output_sha256=hash_model(output) if output is not None else None,
-                input_tokens=m.input_tokens,
-                output_tokens=m.output_tokens,
-                cost_usd=m.cost_usd,
-                latency_ms=m.latency_ms,
-                error=m.error,
-            )
-            self._audit.log(record)
-        except Exception as exc:  # never let auditing break a run
-            warnings.warn(f"audit record failed: {exc}", stacklevel=2)
-
     def _enforce_token_cap(self) -> None:
         """Raise TokenCapExceeded if the active run has passed its per-run token cap.
 
