@@ -151,3 +151,24 @@ class TestOrderConflicts:
                 build_chain(agent)
         finally:
             clash.order = original
+
+
+class TestBrokenAgent:
+    def test_an_agent_that_cannot_load_is_reported_not_fatal(self, project: Path) -> None:
+        """One broken agent must not hide the others.
+
+        `lottie modules` is a diagnostic; if it aborted on the first agent that fails to
+        import, it would be least useful exactly when something is wrong.
+        """
+        broken = project / "agents" / "broken"
+        broken.mkdir(parents=True)
+        (broken / "__init__.py").write_text("")
+        (broken / "agent.py").write_text("raise RuntimeError('cannot import me')\n")
+        (broken / "schema.py").write_text(_SCHEMA)
+        (broken / "config.yaml").write_text(yaml.safe_dump({"provider": "mock/sim"}))
+
+        result = runner.invoke(app, ["modules"])
+        assert result.exit_code == 0, result.output
+        assert "cannot inspect" in result.output
+        # …and the healthy agent is still reported.
+        assert "11 module(s) mounted" in result.output
