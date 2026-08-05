@@ -38,25 +38,23 @@ from lottie.llm import LLMProvider, LLMResponse, Message
 from lottie.llm.base import StreamResult
 from lottie.memory.base import MemoryClient, NullMemoryClient
 from lottie.memory.compaction import compact, estimate_tokens
-from lottie.memory.recall import RecalledMemory, render_as_data
+from lottie.memory.middleware import RecallMiddleware, RunUsage, TrajectoryMiddleware
 from lottie.memory.reflection import (
     RunTrajectory,
     build_reflection_prompt,
-    clip,
     parse_reflection,
 )
 from lottie.memory.schema import (
-    DeltaOp,
     MemoryDelta,
     MemoryOrigin,
-    MemoryQuery,
     MemoryTier,
 )
 from lottie.runtime.events import EventBus
 from lottie.runtime.pipeline import Pipeline
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from lottie.session.schema import SessionState
+    from lottie.session.middleware import SessionMiddleware
+    from lottie.session.schema import SessionRun, SessionState
     from lottie.session.store import SessionStore
 
 # `lottie.session.store` imports the security content gate, whose scanners are BaseSkills,
@@ -197,33 +195,6 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         self._session = self._session.model_copy(update={"progress": merged})
         self._session = self._session_store.save(self._session)
 
-    def _record_session_run(self, data: InputT) -> None:
-        """Append this run to the session history (hash-only) — best-effort."""
-        if self._session is None or self._session_store is None:
-            return
-        m = self.last_metrics
-        if m is None:
-            return
-        from lottie.session.schema import SessionRun as _session_run  # lazy: see above
-
-        try:
-            self._session = self._session_store.record_run(
-                self._session,
-                _session_run(
-                    ts=datetime.now(UTC).timestamp(),
-                    status="ok" if m.success else "error",
-                    input_sha256=hash_model(data),
-                    latency_ms=m.latency_ms,
-                    input_tokens=m.input_tokens,
-                    output_tokens=m.output_tokens,
-                    cost_usd=m.cost_usd,
-                    error=m.error,
-                ),
-            )
-            self._session = self._session_store.save(self._session)
-        except Exception as exc:  # best-effort — never fail the run
-            warnings.warn(f"session record failed: {exc}", stacklevel=2)
-
     def set_compaction(
         self, *, enabled: bool, max_context_tokens: int, keep_recent: int
     ) -> None:
@@ -289,74 +260,89 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         self._trajectory_namespace = namespace
         self._trajectory_max_chars = max_chars
 
-    def _persist_trajectory(self, data: InputT, output: OutputT | None) -> None:
-        """Best-effort: append this run to episodic memory via the gateway (rule 13b).
+    def _recall_module(self) -> RecallMiddleware:
+        """Recall, owned by the memory subsystem (V3 S5)."""
+        return RecallMiddleware(
+            self.memory,
+            self._set_recall_prefix,
+            enabled=self._recall_enabled,
+            namespace=self._recall_namespace,
+            limit=self._recall_limit,
+        )
 
-        Runs for successes AND failures — failures are the more useful half of the
-        corpus. Makes no LLM call, so unlike `_maybe_reflect` it has no budget
-        interaction and needs no skip-when-exhausted check.
+    def _set_recall_prefix(self, prefix: str) -> None:
+        """Where recalled context lands until E4's Context Compiler owns assembly."""
+        self._recall_prefix = prefix
 
-        Never raises: a store failure must not fail an otherwise-good run, nor mask an
-        already-failing one.
-        """
-        if not self._trajectory_enabled:
-            return
+    def _run_usage(self) -> RunUsage | None:
+        """This run's metrics, in the shape the memory/session modules consume."""
         m = self.last_metrics
-        if m is None:  # gates blocked the run before `_execute` — nothing happened
-            return
-        try:
-            limit = self._trajectory_max_chars
-            trajectory = RunTrajectory(
-                task=clip(data.model_dump_json(), limit),
-                outcome=clip(output.model_dump_json(), limit) if output is not None else "",
-                success=m.success,
-                error=m.error,
-                input_tokens=m.input_tokens,
-                output_tokens=m.output_tokens,
-                cost_usd=m.cost_usd,
-                latency_ms=m.latency_ms,
-            )
-            # lazy import: avoids a core<->memory.agent import cycle (as _maybe_reflect does)
-            from lottie.memory.agent import MemoryAgent
+        if m is None:
+            return None
+        return RunUsage(
+            success=m.success,
+            error=m.error,
+            input_tokens=m.input_tokens,
+            output_tokens=m.output_tokens,
+            cost_usd=m.cost_usd,
+            latency_ms=m.latency_ms,
+        )
 
-            gateway = MemoryAgent(llm=self.llm, memory=self.memory, audit=self._audit)
-            gateway.apply(
-                [
-                    MemoryDelta(
-                        op=DeltaOp.ADD,
-                        content=trajectory.model_dump_json(),
-                        tags=["trajectory", "success" if m.success else "failure"],
-                    )
-                ],
-                namespace=self._trajectory_namespace,
-                source_agent=self.name,
-                origin=MemoryOrigin.MANUAL,
-                tier=MemoryTier.EPISODIC,
-            )
-        except Exception as exc:  # best-effort — never fail or mask the run
-            warnings.warn(f"trajectory persistence failed: {exc}", stacklevel=2)
+    def _apply_deltas(
+        self, deltas: list[MemoryDelta], namespace: str, origin: MemoryOrigin
+    ) -> None:
+        """Rule 13b: every learned write goes through the MemoryAgent gateway."""
+        # lazy import: avoids a core<->memory.agent import cycle
+        from lottie.memory.agent import MemoryAgent
 
-    def _load_recall(self) -> None:
-        """Best-effort: stash a render_as_data block of recalled semantic notes.
+        MemoryAgent(llm=self.llm, memory=self.memory, audit=self._audit).apply(
+            deltas,
+            namespace=namespace,
+            source_agent=self.name,
+            origin=origin,
+            tier=MemoryTier.EPISODIC,
+        )
 
-        A read failure is non-fatal (fail-open) — the run proceeds without context.
-        """
-        self._recall_prefix = ""
-        if not self._recall_enabled:
-            return
-        try:
-            result = self.memory.recall(
-                MemoryQuery(
-                    text="",
-                    namespace=self._recall_namespace,
-                    tier=MemoryTier.SEMANTIC,
-                    limit=self._recall_limit,
-                )
-            )
-            self._recall_prefix = render_as_data(RecalledMemory.from_result(result))
-        except Exception as exc:  # recall is best-effort — never break the run
-            warnings.warn(f"recall failed, proceeding without context: {exc}", stacklevel=2)
-            self._recall_prefix = ""
+    def _trajectory_module(self) -> TrajectoryMiddleware:
+        """Episodic trajectory capture, owned by the memory subsystem (V3 S5)."""
+        return TrajectoryMiddleware(
+            self._apply_deltas,
+            self._run_usage,
+            enabled=self._trajectory_enabled,
+            namespace=self._trajectory_namespace,
+            max_chars=self._trajectory_max_chars,
+        )
+
+    def _session_run(self) -> SessionRun | None:
+        from lottie.session.schema import SessionRun  # lazy: see the cycle note above
+
+        m = self.last_metrics
+        if m is None:
+            return None
+        return SessionRun(
+            ts=0.0,  # stamped by the module
+            status="ok" if m.success else "error",
+            latency_ms=m.latency_ms,
+            input_tokens=m.input_tokens,
+            output_tokens=m.output_tokens,
+            cost_usd=m.cost_usd,
+            error=m.error,
+        )
+
+    def _session_module(self) -> SessionMiddleware:
+        """Session bookkeeping, owned by the session subsystem (V3 S5)."""
+        from lottie.session.middleware import SessionMiddleware  # lazy: see cycle note
+
+        return SessionMiddleware(
+            self._session_store,
+            lambda: self._session,
+            self._set_session_state,
+            self._session_run,
+            hash_model_str,
+        )
+
+    def _set_session_state(self, state: SessionState) -> None:
+        self._session = state
 
     def _maybe_reflect(self, data: InputT, output: OutputT) -> None:
         """Best-effort: distill the finished run into memory lessons via the gateway.
@@ -490,29 +476,6 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
             )
         except Exception as e:  # never let auditing convert/suppress the block
             warnings.warn(f"block audit failed: {e}", stacklevel=2)
-
-    def _write_audit(self, data: InputT, output: OutputT | None, is_root: bool) -> None:
-        m = self.last_metrics
-        if m is None:  # super().run always sets it, but stay defensive
-            return
-        try:
-            record = AuditRecord(
-                ts=m.timestamp.isoformat(),
-                agent=m.name,
-                provider=m.provider,
-                status="ok" if m.success else "error",
-                root=is_root,
-                input_sha256=hash_model(data),
-                output_sha256=hash_model(output) if output is not None else None,
-                input_tokens=m.input_tokens,
-                output_tokens=m.output_tokens,
-                cost_usd=m.cost_usd,
-                latency_ms=m.latency_ms,
-                error=m.error,
-            )
-            self._audit.log(record)
-        except Exception as exc:  # never let auditing break a run
-            warnings.warn(f"audit record failed: {exc}", stacklevel=2)
 
     def _enforce_token_cap(self) -> None:
         """Raise TokenCapExceeded if the active run has passed its per-run token cap.
