@@ -4,6 +4,103 @@ All notable changes to Lottie Orchestrator. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions are
 [semver](https://semver.org/).
 
+## [3.0.0] — 2026-08-05
+
+**"A runtime, not a base class."** V3 extracts an execution kernel so cross-cutting
+concerns are **registered modules** rather than hand-sequenced steps inside
+`BaseAgent.run`.
+
+Delivered as a sliced epic (S1–S7), each PR validated downstream by a `lottie-lab` round
+(R28–R33) before merge.
+
+### Added — the kernel
+
+- **`lottie.runtime`** — an execution kernel with two primitives, matching the two
+  semantics already present in the code:
+  - **Middleware** (Lifecycle Hooks) — ordered, abort-capable, can span `_execute` with a
+    `try/finally`. For fail-closed gates.
+  - **EventBus** (Event Runtime) — a fail-open observation stream. A subscriber that
+    raises is warned and swallowed; it can neither fail a run nor starve the next
+    observer.
+- **`ScopedMiddleware`** — the streaming form. The plain middleware contract cannot
+  express streaming: when `nxt` returns a generator, its `finally` fires at generator
+  *creation*, settling the budget before a single delta exists. A scope composes through
+  `ExitStack`, whose `with` spans consumption.
+- **`ModuleRegistry`** with order-conflict detection at registration.
+- **Events carry scalars and sha256 hashes only.** The bus is an observation surface the
+  Plugin SDK will open to third parties, so a raw payload on it would be an exfiltration
+  channel. The digest shape is **verified**, not trusted — an echoing hasher is refused.
+
+### Changed — one execution path
+
+- **`BaseAgent.run` is one line over the chain.** Twelve hand-sequenced cross-cutting
+  steps became mounted modules.
+- **`run_stream` shares the same middleware instances** (the scoped subset).
+  `_pre_run_gates` is deleted; the duplicated execution path is gone.
+- **Modules moved to their owning subsystems.** Security (rules 8/9) to
+  `security/middleware.py`; policy, cost, capability (rule 11) to
+  `governance/middleware.py`; recall and trajectory to `memory/middleware.py`; session to
+  `session/middleware.py`. Each is constructed from its gate or client — none knows
+  `BaseAgent`.
+- **Auditing is an event subscriber.** Best-effort stopped being a `try/except` each
+  observer had to remember and became a property of the bus.
+
+### Added — operator surface
+
+- **`lottie modules [<agent>]`** — the mounted chain, in execution order, with disabled
+  modules shown explicitly. The chain was previously invisible.
+- **A `modules:` config block** to switch a module off per agent. Built-in modules keep
+  their existing top-level keys rather than growing a second way to configure the same
+  thing.
+- **`lottie doctor`** flags an unknown module name (a typo there does nothing, which is
+  the dangerous kind of nothing) and warns loudly when a **fail-closed** module is
+  disabled.
+
+### Ordering, which turned out to be the hard part
+
+Reproducing `run()`'s sequence exactly forced three findings, each of which would have
+changed behaviour silently:
+
+- **`CAPABILITY` is the innermost module.** The rule-11 gate is released *before*
+  `_verify`, and `_verify` is user code that may call a skill.
+- **`DEPTH` sits above `COST`.** `_write_block` reads `_depth() == 0` for the audit root
+  flag; incrementing first would record a denied top-level run as a nested worker.
+- **`run()`'s interleaving cannot be a pure onion** — the pre phase needs `COST < DEPTH`
+  while the post phase would need the reverse. Two deviations are accepted and
+  documented, both verified unobservable: `CostGate.settle` never reads the depth, and
+  `_write_audit` received `is_root` as a captured parameter.
+
+### Fixed
+
+- **A cancelled stream was audited `status="ok"`.** `GeneratorExit` is a `BaseException`,
+  so an `except Exception` missed it. Caught by a pre-existing test.
+- **Audit records silently lost their `provider`.** Caught by lab R31.
+- Removed dead code that the migration stranded: `_pre_run_gates`, `_write_audit`.
+
+### Not delivered — stated plainly
+
+The epic's headline metric was **`core/base_agent.py`: 6 subsystem imports → 1.** It is at
+**5**. The middleware genuinely moved and are lab-proven to be owned by their subsystems,
+but `base_agent` still imports them *to construct* them, plus `memory.compaction` and
+`memory.reflection`.
+
+Two things block the rest, both recorded rather than worked around:
+
+- **Reflection did not become a module.** `_maybe_reflect` re-enters the agent's own
+  `complete()` with hand-primed budget state; extracting it needs a Protocol that is
+  `BaseAgent` in all but spelling.
+- **Compaction is E4's by design** (spec §1.1) — it is a per-completion concern, not a
+  run-lifecycle step.
+
+Both close in **E4 (Context Compiler, v3.1)**, when message assembly and the run budget
+become modules in their own right. The import reversal is on track, not complete.
+
+### Backward compatibility
+
+`run()` and `run_stream()` keep their signatures, exception types, and audit record
+shapes. Every new capability is opt-in config. A 2.0.0 project with no config change
+behaves exactly as before.
+
 ## [2.0.0] — 2026-08-03
 
 **"Agents that learn, runs that outlive the process."** V2 closes the two gaps against the
