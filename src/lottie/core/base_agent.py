@@ -417,14 +417,14 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         The `core` is `InstrumentedRunnable.run` — timing, OTel span, metrics, `_execute`.
         Everything wrapped around it is a mounted module (V3 S2).
         """
-        from lottie.core.middleware import STANDARD_CHAIN
+        from lottie.core.middleware import build_chain
 
         return Pipeline(
             runnable=self.name,
             kind=self.kind,
             core=lambda data: InstrumentedRunnable.run(self, data),
             hasher=hash_model_str,
-            middleware=[cls(self) for cls in STANDARD_CHAIN],  # type: ignore[arg-type]
+            middleware=build_chain(self),  # type: ignore[arg-type]
         )
 
     def run(self, data: InputT) -> OutputT:

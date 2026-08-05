@@ -12,7 +12,7 @@ import pytest
 from pydantic import BaseModel
 
 from lottie.core.base_agent import BaseAgent, _depth
-from lottie.core.middleware import STANDARD_CHAIN
+from lottie.core.middleware import build_chain
 from lottie.governance.capability import CapabilityGate, active_capability_gate
 from lottie.governance.policy import PolicyDenied, PolicyGate
 from lottie.llm import MockLLMProvider
@@ -63,14 +63,22 @@ def _probe(log: list[str]) -> _Probe:
 
 class TestChainComposition:
     def test_every_standard_middleware_is_mounted(self) -> None:
-        agent = _probe([])
-        chain = [cls(agent) for cls in STANDARD_CHAIN]  # type: ignore[arg-type]
-        assert len({m.name for m in chain}) == len(STANDARD_CHAIN)
+        chain = build_chain(_probe([]))  # type: ignore[arg-type]
+        assert len({m.name for m in chain}) == len(chain) == 12
 
     def test_no_two_middleware_share_an_order(self) -> None:
-        agent = _probe([])
-        orders = [cls(agent).order for cls in STANDARD_CHAIN]  # type: ignore[arg-type]
+        orders = [m.order for m in build_chain(_probe([]))]  # type: ignore[arg-type]
         assert len(set(orders)) == len(orders)
+
+    def test_the_fail_closed_modules_come_from_their_own_subsystems(self) -> None:
+        # V3 S3: security/policy/cost/capability are owned by their subsystems and know
+        # nothing about BaseAgent — they are constructed from their gate alone.
+        by_name = {m.name: type(m).__module__ for m in build_chain(_probe([]))}  # type: ignore[arg-type]
+        assert by_name["security_input"] == "lottie.security.middleware"
+        assert by_name["security_output"] == "lottie.security.middleware"
+        assert by_name["policy"] == "lottie.governance.middleware"
+        assert by_name["cost"] == "lottie.governance.middleware"
+        assert by_name["capability"] == "lottie.governance.middleware"
 
 
 class TestCallOrder:
