@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, ClassVar, Literal
 
 from pydantic import BaseModel
 
+from lottie.context.compiler import StaticSource, compile_context
 from lottie.core.metrics import Kind, RunContext
 from lottie.core.runnable import InstrumentedRunnable
 from lottie.core.security_gate import NullSecurityGate, SecurityGateProtocol
@@ -245,6 +246,50 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
             self._count_turn()
             self._enforce_token_cap()
         return response.content
+
+    def _context_sources(self, messages: list[Message]) -> list[StaticSource]:
+        """The sources that make up a prompt, in assembly order (E4).
+
+        Pinning is a SOURCE property now, not a role check. Recall is pinned because
+        recall-as-data is the S2a anti-poisoning contract; the agent's own messages are
+        pinned because dropping the task is never the right trade.
+        """
+        sources: list[StaticSource] = []
+        if self._recall_prefix:
+            sources.append(
+                StaticSource(
+                    "recall",
+                    20,
+                    [Message(role="system", content=self._recall_prefix)],
+                    pinned=True,
+                )
+            )
+        sources.append(StaticSource("agent", 90, messages, pinned=True))
+        return sources
+
+    def _compile_context(self, messages: list[Message]) -> list[Message]:
+        """Assemble the prompt through the compiler. Best-effort, as compaction was.
+
+        A compiler failure sends the un-compiled prompt and warns — the provider's own
+        context error is a clearer diagnosis than an assembly outage disguised as a task
+        failure. A budget stop still propagates: that is the run's decision.
+        """
+        try:
+            result = compile_context(
+                self._context_sources(messages),
+                max_tokens=self._max_context_tokens if self._compaction_enabled else None,
+                summarize=self._summarize_span if self._compaction_enabled else None,
+            )
+            compiled = result.messages
+        except (TokenCapExceeded, TurnLimitExceeded):
+            raise  # a budget stop is the run's decision, not assembly's to swallow
+        except Exception as exc:
+            warnings.warn(f"context assembly failed, sending as-is: {exc}", stacklevel=2)
+            return self._maybe_compact(messages)
+        # Every source is pinned today, so the compiler cannot shrink an over-budget
+        # prompt on its own. Compaction still runs over the assembled result — the same
+        # pure function, now called once at the end of assembly rather than mid-way.
+        return self._maybe_compact(compiled)
 
     def _maybe_compact(self, messages: list[Message]) -> list[Message]:
         """Best-effort compaction. A failure sends the uncompacted prompt rather than
@@ -533,9 +578,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         When recall is enabled and produced context, a leading data-framed system
         message is prepended (recall-as-data; never instructions).
         """
-        if self._recall_prefix:
-            messages = [Message(role="system", content=self._recall_prefix), *messages]
-        messages = self._maybe_compact(messages)  # single call site (V3 spec §1.1)
+        messages = self._compile_context(messages)
         response = self.llm.complete(messages, model_params)
         if self._active_ctx is not None:
             self._active_ctx.add_usage(response.usage, response.cost_usd)
