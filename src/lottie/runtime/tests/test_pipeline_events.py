@@ -8,7 +8,7 @@ before any middleware post-phase (cost settle). Today that ordering is hand-main
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 
 import pytest
 from pydantic import BaseModel
@@ -253,3 +253,62 @@ class TestHasherIsVerified:
 
     def test_a_real_sha256_passes(self) -> None:
         assert _pipe(EventBus()).execute(_Input(text="hi")).text == "HI"
+
+
+class TestProviderIsCarried:
+    """Regression: `provider` was added to the event models but never populated, so every
+    audit record silently lost the model id. Caught by lab Round 31 case 3."""
+
+    def test_the_provider_reaches_the_event(self) -> None:
+        bus, rec = _bus_with_recorder()
+        Pipeline(
+            runnable="Demo",
+            kind="agent",
+            provider="anthropic/claude-sonnet-4-6",
+            core=_core,
+            hasher=_hasher,
+            bus=bus,
+        ).execute(_Input(text="hi"))
+        assert all(e.provider == "anthropic/claude-sonnet-4-6" for e in rec.seen)
+
+    def test_a_provider_less_runnable_reports_none(self) -> None:
+        bus, rec = _bus_with_recorder()
+        _pipe(bus).execute(_Input(text="hi"))
+        assert all(e.provider is None for e in rec.seen)
+
+
+class TestStreamFailure:
+    """A streaming core that raises mid-stream must emit RunFailed, not RunCompleted."""
+
+    def _boom_stream(self, ctx: object) -> Iterator[str]:
+        yield "a"
+        raise ValueError("mid-stream failure")
+
+    def test_a_failing_stream_emits_run_failed(self) -> None:
+        bus, rec = _bus_with_recorder()
+        pipe: Pipeline[_Input, _Output] = Pipeline(
+            runnable="Demo", kind="agent", core=_core, hasher=_hasher, bus=bus
+        )
+        with pytest.raises(ValueError, match="mid-stream"):
+            list(pipe.execute_stream(_Input(text="x"), self._boom_stream))
+        assert len(rec.only(RunFailed)) == 1
+
+    def test_a_failing_stream_emits_no_run_completed(self) -> None:
+        bus, rec = _bus_with_recorder()
+        pipe: Pipeline[_Input, _Output] = Pipeline(
+            runnable="Demo", kind="agent", core=_core, hasher=_hasher, bus=bus
+        )
+        with pytest.raises(ValueError):
+            list(pipe.execute_stream(_Input(text="x"), self._boom_stream))
+        assert rec.only(RunCompleted) == []
+
+    def test_the_deltas_before_the_failure_still_reached_the_caller(self) -> None:
+        bus, _ = _bus_with_recorder()
+        pipe: Pipeline[_Input, _Output] = Pipeline(
+            runnable="Demo", kind="agent", core=_core, hasher=_hasher, bus=bus
+        )
+        seen: list[str] = []
+        with pytest.raises(ValueError):
+            for piece in pipe.execute_stream(_Input(text="x"), self._boom_stream):
+                seen.append(piece)
+        assert seen == ["a"]

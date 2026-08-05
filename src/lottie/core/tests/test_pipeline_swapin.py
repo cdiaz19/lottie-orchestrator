@@ -8,11 +8,14 @@ incidental — and to guard the two deliberate deviations documented in
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from pydantic import BaseModel
 
 from lottie.core.base_agent import BaseAgent, _depth
 from lottie.core.middleware import build_chain
+from lottie.governance.audit import SqliteAuditLogger
 from lottie.governance.capability import CapabilityGate, active_capability_gate
 from lottie.governance.policy import PolicyDenied, PolicyGate
 from lottie.llm import MockLLMProvider
@@ -47,9 +50,6 @@ class _Probe(BaseAgent[_In, _Out]):
     def _maybe_reflect(self, data: _In, output: _Out) -> None:
         self.log.append("reflect")
 
-    def _write_audit(self, data: _In, output: _Out | None, is_root: bool) -> None:
-        self.log.append(f"audit(root={is_root})")
-
     def _persist_trajectory(self, data: _In, output: _Out | None) -> None:
         self.log.append("trajectory")
 
@@ -63,8 +63,14 @@ def _probe(log: list[str]) -> _Probe:
 
 class TestChainComposition:
     def test_every_standard_middleware_is_mounted(self) -> None:
+        # 11 after S4: audit left the chain to become an EventBus subscriber.
         chain = build_chain(_probe([]))  # type: ignore[arg-type]
-        assert len({m.name for m in chain}) == len(chain) == 12
+        assert len({m.name for m in chain}) == len(chain) == 11
+
+    def test_audit_is_no_longer_a_middleware(self) -> None:
+        # It is an observer, so it subscribes. Its best-effort behaviour is now a
+        # property of the bus rather than a try/except it has to remember.
+        assert "audit" not in {m.name for m in build_chain(_probe([]))}  # type: ignore[arg-type]
 
     def test_no_two_middleware_share_an_order(self) -> None:
         orders = [m.order for m in build_chain(_probe([]))]  # type: ignore[arg-type]
@@ -90,7 +96,6 @@ class TestCallOrder:
             "execute",
             "verify",
             "reflect",
-            "audit(root=True)",
             "trajectory",
             "session",
         ]
@@ -101,17 +106,21 @@ class TestCallOrder:
         _probe(log).run(_In(task="t"))
         assert log.index("verify") < log.index("reflect")
 
-    def test_audit_runs_before_trajectory_and_session(self) -> None:
+    def test_trajectory_runs_before_session(self) -> None:
         log: list[str] = []
         _probe(log).run(_In(task="t"))
-        assert log.index("audit(root=True)") < log.index("trajectory") < log.index("session")
+        assert log.index("trajectory") < log.index("session")
 
 
 class TestAuditRootFlag:
-    def test_a_top_level_run_is_root(self) -> None:
-        log: list[str] = []
-        _probe(log).run(_In(task="t"))
-        assert "audit(root=True)" in log
+    def test_a_top_level_run_is_audited_root(self, tmp_path: Path) -> None:
+        # V3 S4: audit is a SUBSCRIBER, so this observes the real ledger rather than a
+        # method override — the mechanism it used to instrument no longer exists.
+        agent = _probe([])
+        agent._audit = SqliteAuditLogger(tmp_path)
+        agent.run(_In(task="t"))
+        rows = SqliteAuditLogger(tmp_path).query()
+        assert len(rows) == 1 and rows[0].root is True and rows[0].status == "ok"
 
     def test_depth_is_restored_after_the_run(self) -> None:
         _probe([]).run(_In(task="t"))
@@ -186,7 +195,7 @@ class TestFailurePaths:
         agent = _Failing(log, llm=MockLLMProvider(responses=["ok"]), enable_benchmarks=False)
         with pytest.raises(ValueError):
             agent.run(_In(task="t"))
-        assert "audit(root=True)" in log and "trajectory" in log and "session" in log
+        assert "trajectory" in log and "session" in log
 
     def test_a_failed_run_does_not_reflect(self) -> None:
         # Reflection distils a completed run; a failure has no outcome to learn from.

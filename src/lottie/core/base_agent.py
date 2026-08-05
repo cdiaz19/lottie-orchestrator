@@ -52,6 +52,7 @@ from lottie.memory.schema import (
     MemoryQuery,
     MemoryTier,
 )
+from lottie.runtime.events import EventBus
 from lottie.runtime.pipeline import Pipeline
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -418,13 +419,22 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         Everything wrapped around it is a mounted module (V3 S2).
         """
         from lottie.core.middleware import build_chain
+        from lottie.governance.subscribers import AuditSubscriber
 
+        bus = EventBus()
+        # Audit is an OBSERVER, so it subscribes rather than mounting: `EventBus.emit`
+        # isolates every dispatch, which makes best-effort a property of the bus instead
+        # of a try/except each observer has to remember.
+        bus.subscribe(AuditSubscriber(self._audit))
         return Pipeline(
             runnable=self.name,
             kind=self.kind,
+            provider=self.provider,
             core=lambda data: InstrumentedRunnable.run(self, data),
             hasher=hash_model_str,
             middleware=build_chain(self),  # type: ignore[arg-type]
+            bus=bus,
+            usage_factory=lambda: self._active_ctx or RunContext(),
         )
 
     def run(self, data: InputT) -> OutputT:

@@ -50,6 +50,12 @@ class ExecutionContext:
     input: BaseModel
     run_id: str
     usage: UsageAccumulator = field(default_factory=NullUsage)
+    #: True when this is a TOP-LEVEL run rather than a nested mesh worker. A first-class
+    #: run property, not a module detail: observers need it and would otherwise have to
+    #: reach into another module's scoped state to get it.
+    root: bool = False
+    #: Model id for observability. None for non-LLM runnables.
+    provider: str | None = None
     state: dict[str, object] = field(default_factory=dict)
 
     def scoped(self, module: str) -> dict[str, object]:

@@ -8,11 +8,13 @@ These tests pin that scopes actually span consumption.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from pydantic import BaseModel
 
 from lottie.core.base_agent import BaseAgent, _depth
+from lottie.governance.audit import SqliteAuditLogger
 from lottie.governance.capability import CapabilityGate, active_capability_gate
 from lottie.governance.policy import PolicyDenied, PolicyGate
 from lottie.llm import MockLLMProvider
@@ -39,9 +41,6 @@ class _Streamer(BaseAgent[_In, _Out]):
             self.log.append(f"yield:{piece}")
             yield piece
 
-    def _write_audit(self, data: _In, output: _Out | None, is_root: bool) -> None:
-        self.log.append(f"audit(output={output!r},root={is_root})")
-
 
 def _agent(log: list[str] | None = None) -> _Streamer:
     return _Streamer(log, llm=MockLLMProvider(responses=["x"]), enable_benchmarks=False)
@@ -50,7 +49,8 @@ def _agent(log: list[str] | None = None) -> _Streamer:
 class TestSharedChain:
     def test_the_streaming_chain_is_the_scoped_subset(self) -> None:
         names = _agent()._build_pipeline().scoped_names()
-        assert names == ["policy", "cost", "audit", "depth", "capability"]
+        # audit left the chain in S4 — it is a subscriber now.
+        assert names == ["policy", "cost", "depth", "capability"]
 
     def test_output_shaping_middleware_are_absent(self) -> None:
         # verify / check_output / reflect need an output value, which a stream has not
@@ -86,19 +86,22 @@ class TestScopesSpanConsumption:
         list(agent.run_stream(_In(task="t")))
         assert seen == [gate]
 
-    def test_audit_fires_only_after_the_last_delta(self) -> None:
-        log: list[str] = []
-        stream = _agent(log).run_stream(_In(task="t"))
+    def test_audit_fires_only_after_the_last_delta(self, tmp_path: Path) -> None:
+        agent = _agent()
+        agent._audit = SqliteAuditLogger(tmp_path)
+        stream = agent.run_stream(_In(task="t"))
         assert next(stream) == "a"
-        assert not any(entry.startswith("audit") for entry in log)  # mid-stream
+        assert SqliteAuditLogger(tmp_path).query() == []  # mid-stream: nothing yet
         list(stream)  # drain
-        assert any(entry.startswith("audit") for entry in log)
+        assert len(SqliteAuditLogger(tmp_path).query()) == 1
 
-    def test_audit_records_no_output_for_a_stream(self) -> None:
-        # A stream has no single typed Output — output=None, as before the swap-in.
-        log: list[str] = []
-        list(_agent(log).run_stream(_In(task="t")))
-        assert "audit(output=None,root=True)" in log
+    def test_audit_records_no_output_for_a_stream(self, tmp_path: Path) -> None:
+        # A stream has no single typed Output — output_sha256 is None, as before.
+        agent = _agent()
+        agent._audit = SqliteAuditLogger(tmp_path)
+        list(agent.run_stream(_In(task="t")))
+        row = SqliteAuditLogger(tmp_path).query()[0]
+        assert row.output_sha256 is None and row.root is True
 
     def test_depth_is_restored_after_the_stream(self) -> None:
         list(_agent().run_stream(_In(task="t")))
@@ -114,11 +117,15 @@ class TestGates:
             next(agent.run_stream(_In(task="t")))
         assert not any(entry.startswith("yield") for entry in log)
 
-    def test_closing_early_still_unwinds_the_scopes(self) -> None:
-        # The transport closes the generator to cancel; the reservation must still settle.
-        log: list[str] = []
-        stream = _agent(log).run_stream(_In(task="t"))
+    def test_closing_early_still_unwinds_the_scopes(self, tmp_path: Path) -> None:
+        # The transport closes the generator to cancel; the reservation must still settle
+        # and the cancelled run must still reach the ledger — as PARTIAL, not "ok".
+        agent = _agent()
+        agent._audit = SqliteAuditLogger(tmp_path)
+        stream = agent.run_stream(_In(task="t"))
         assert next(stream) == "a"
         stream.close()
-        assert any(entry.startswith("audit") for entry in log)
+        rows = SqliteAuditLogger(tmp_path).query()
+        assert len(rows) == 1 and rows[0].status == "error"
+        assert rows[0].error == "stream closed before completion"
         assert _depth() == 0
