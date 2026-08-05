@@ -104,3 +104,35 @@ class TestBestEffort:
         agent._context_sources = _boom  # type: ignore[method-assign]
         with pytest.warns(UserWarning, match="context assembly failed"):
             agent.run(_In(task="hello"))
+
+
+class TestBudgetStopIsNotSwallowed:
+    def test_a_token_cap_during_assembly_propagates(self) -> None:
+        """Assembly is best-effort about ITS OWN failures, not about the run's budget.
+
+        Summarisation happens during assembly and spends tokens. If a cap trip there were
+        caught by the same handler that tolerates an assembly outage, the run would carry
+        on spending past its ceiling — the opposite of what the cap is for.
+        """
+        from lottie.governance.cost import TokenCapExceeded
+
+        agent = _agent()
+
+        def _cap(messages: list[Message]) -> list[StaticSource]:
+            raise TokenCapExceeded("cap reached")
+
+        agent._context_sources = _cap  # type: ignore[method-assign]
+        with pytest.raises(TokenCapExceeded):
+            agent.run(_In(task="hello"))
+
+    def test_a_turn_limit_during_assembly_propagates(self) -> None:
+        from lottie.core.base_agent import TurnLimitExceeded
+
+        agent = _agent()
+
+        def _turns(messages: list[Message]) -> list[StaticSource]:
+            raise TurnLimitExceeded("too many turns")
+
+        agent._context_sources = _turns  # type: ignore[method-assign]
+        with pytest.raises(TurnLimitExceeded):
+            agent.run(_In(task="hello"))
