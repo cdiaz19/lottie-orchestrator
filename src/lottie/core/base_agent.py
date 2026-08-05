@@ -119,6 +119,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         self._trajectory_enabled: bool = False
         self._trajectory_namespace: str = ""
         self._trajectory_max_chars: int = 4000
+        self._disabled_modules: frozenset[str] = frozenset()
         self._compaction_enabled: bool = False
         self._max_context_tokens: int = 8000
         self._keep_recent: int = 6
@@ -194,6 +195,21 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         merged = {**self._session.progress, **updates}
         self._session = self._session.model_copy(update={"progress": merged})
         self._session = self._session_store.save(self._session)
+
+    def set_disabled_modules(self, names: frozenset[str]) -> None:
+        """Drop named modules from the chain (via instantiate_agent, `modules:` block)."""
+        self._disabled_modules = names
+
+    def mounted_modules(self) -> list[str]:
+        """Names of the modules currently mounted, in chain order.
+
+        The read model behind `lottie modules`: what is actually wrapping this agent's
+        runs, rather than what the config implies.
+        """
+        from lottie.core.middleware import build_chain
+
+        chain = build_chain(self, self._disabled_modules)  # type: ignore[arg-type]
+        return [m.name for m in sorted(chain, key=lambda m: m.order)]
 
     def set_compaction(
         self, *, enabled: bool, max_context_tokens: int, keep_recent: int
@@ -418,7 +434,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
             provider=self.provider,
             core=lambda data: InstrumentedRunnable.run(self, data),
             hasher=hash_model_str,
-            middleware=build_chain(self),  # type: ignore[arg-type]
+            middleware=build_chain(self, self._disabled_modules),  # type: ignore[arg-type]
             bus=bus,
             usage_factory=lambda: self._active_ctx or RunContext(),
         )

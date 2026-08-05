@@ -88,6 +88,18 @@ class HarnessConfig(BaseModel):
     compaction: CompactionConfig = CompactionConfig()
 
 
+class ModuleConfig(BaseModel):
+    """Enable or disable one mounted runtime module (V3 S6).
+
+    Only `enabled` for now. Built-in modules keep their existing top-level config keys
+    (`budget_usd`, `capabilities`, `memory.*`, ...) rather than growing a second way to
+    configure the same thing; this block is for switching a module OFF and, from E7, for
+    third-party module settings.
+    """
+
+    enabled: bool = True
+
+
 class AgentConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -103,6 +115,9 @@ class AgentConfig(BaseModel):
     max_turns: int | None = None  # per-run LLM-completion cap (runaway-loop guard); None = off
     memory: MemoryConfig = MemoryConfig()
     harness: HarnessConfig = HarnessConfig()
+    #: name -> {enabled}. Unknown names are rejected by `lottie doctor`, since a typo
+    #: here would silently leave a security gate mounted.
+    modules: dict[str, ModuleConfig] = {}
     chat: ChatConfig | None = None  # None = agent not exposed on /v1/chat/completions
 
 

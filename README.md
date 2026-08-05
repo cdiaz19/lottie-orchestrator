@@ -96,6 +96,29 @@ is always a human decision: `lottie distill review --approve` re-screens the dra
 to `skills/distilled/<name>/`, and records who approved it under which capability. An agent
 must declare both `distilled` and that capability to invoke it.
 
+### Inspect what wraps a run
+
+Every agent run is wrapped by an ordered chain of runtime modules — security gates, policy,
+budget, capability, memory. The chain is otherwise invisible, and inference is exactly how
+a disabled gate goes unnoticed:
+
+```bash
+lottie modules             # every agent's mounted chain, in execution order
+lottie modules digest      # one agent
+```
+
+A module can be switched off per agent. Built-in modules keep their existing config keys
+(`budget_usd`, `capabilities`, `memory.*`); this block is only for turning one **off**:
+
+```yaml
+modules:
+  recall: { enabled: false }
+```
+
+`lottie doctor` flags an unknown module name (a typo there does nothing, which is the
+dangerous kind of nothing) and warns loudly when a **fail-closed** module —
+`security_input`, `security_output`, `policy`, `capability` — is disabled.
+
 ### Long runs: context compaction
 
 ```yaml

@@ -192,3 +192,35 @@ def test_warns_on_a_keep_recent_below_the_floor(
         {"harness": {"compaction": {"enabled": True, "keep_recent": 0}}},
     )
     assert "droppable" in runner.invoke(app, ["doctor"]).output
+
+
+def test_warns_on_an_unknown_module_name(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # A typo in the modules block does nothing, which is the dangerous kind of nothing.
+    _project_with_agent(tmp_path, monkeypatch, {"modules": {"recal": {"enabled": False}}})
+    assert "unknown module name" in runner.invoke(app, ["doctor"]).output
+
+
+def test_warns_loudly_when_a_security_module_is_disabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Disabling one of these removes a fail-closed guarantee.
+    _project_with_agent(
+        tmp_path, monkeypatch, {"modules": {"security_input": {"enabled": False}}}
+    )
+    out = runner.invoke(app, ["doctor"]).output
+    assert "DISABLED" in out and "fail-closed" in out
+
+
+def test_disabling_a_non_security_module_is_not_flagged_as_dangerous(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _project_with_agent(tmp_path, monkeypatch, {"modules": {"recall": {"enabled": False}}})
+    assert "fail-closed" not in runner.invoke(app, ["doctor"]).output
+
+
+def test_a_clean_modules_block_produces_no_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _project_with_agent(tmp_path, monkeypatch, {"modules": {"recall": {"enabled": True}}})
+    out = runner.invoke(app, ["doctor"]).output
+    assert "unknown module name" not in out and "DISABLED" not in out
