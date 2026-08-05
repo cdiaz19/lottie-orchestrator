@@ -72,36 +72,6 @@ class TrajectoryMiddleware:
             self._agent._persist_trajectory(ctx.input, output)
 
 
-class AuditMiddleware:
-    """One immutable record per run. Posts before trajectory, session, and settle."""
-
-    name = "audit"
-    order = Order.AUDIT
-
-    def __init__(self, agent: BaseAgent[BaseModel, BaseModel]) -> None:
-        self._agent = agent
-
-    def __call__(self, ctx: ExecutionContext, nxt: Next) -> BaseModel:
-        output: BaseModel | None = None
-        try:
-            output = nxt(ctx)
-            return output
-        finally:
-            # `is_root` is captured by DepthMiddleware on the way in, not re-read here —
-            # which is precisely why moving the depth reset earlier is unobservable.
-            is_root = bool(ctx.scoped("depth").get("is_root", False))
-            self._agent._write_audit(ctx.input, output, is_root)
-
-    @contextmanager
-    def scope(self, ctx: ExecutionContext) -> Iterator[None]:
-        """Streaming form. `output=None` — a stream has no single typed Output, which is
-        exactly what `run_stream` recorded before the swap-in."""
-        try:
-            yield
-        finally:
-            is_root = bool(ctx.scoped("depth").get("is_root", False))
-            self._agent._write_audit(ctx.input, None, is_root)
-
 
 class DepthMiddleware:
     """Run-depth tracking for the audit `root` flag.
@@ -125,7 +95,9 @@ class DepthMiddleware:
         from lottie.core.base_agent import _audit_depth, _depth
 
         token = _audit_depth.set(_depth() + 1)
-        ctx.scoped("depth")["is_root"] = _depth() == 1
+        # A first-class run property rather than scoped state: observers need it, and
+        # reaching into another module's private slice to get it would be worse.
+        ctx.root = _depth() == 1
         try:
             yield
         finally:
@@ -186,10 +158,10 @@ class VerifyMiddleware:
 def build_chain(agent: BaseAgent[BaseModel, BaseModel]) -> list[Middleware]:
     """The standard chain for an agent.
 
-    Security, policy, cost and capability now come from their OWNING subsystems (V3 S3)
-    and are constructed from the gate alone — they know nothing about `BaseAgent`. The
-    remainder are still agent-coupled adapters and move out in S4 (audit -> subscriber)
-    and S5 (recall / reflect / verify).
+    Security, policy, cost and capability come from their OWNING subsystems (V3 S3) and
+    are constructed from the gate alone. Audit left the chain entirely in S4 — it is an
+    observer, so it is an `EventBus` subscriber now. The remainder are still agent-coupled
+    adapters and move out in S5 (recall / reflect / verify).
 
     `Pipeline` sorts by `order`, so this order is for readability only — the authority is
     `runtime.middleware.Order`.
@@ -200,7 +172,6 @@ def build_chain(agent: BaseAgent[BaseModel, BaseModel]) -> list[Middleware]:
         CostMiddleware(agent._cost, agent._write_block),
         SessionMiddleware(agent),
         TrajectoryMiddleware(agent),
-        AuditMiddleware(agent),
         DepthMiddleware(agent),
         RecallMiddleware(agent),
         ReflectMiddleware(agent),

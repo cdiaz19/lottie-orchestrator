@@ -130,7 +130,81 @@ class Pipeline[InputT: BaseModel, OutputT: BaseModel]:
         with ExitStack() as stack:
             for mw in scoped:
                 stack.enter_context(mw.scope(ctx))
-            yield from core(ctx)
+            input_hash = self._checked_hash(ctx.input)
+            self._bus.emit(
+                RunStarted(
+                    run_id=ctx.run_id,
+                    runnable=ctx.runnable,
+                    kind=ctx.kind,
+                    root=ctx.root,
+                    provider=ctx.provider,
+                    input_sha256=input_hash,
+                )
+            )
+            start = perf_counter()
+            try:
+                yield from core(ctx)
+            except GeneratorExit:
+                # BaseException, NOT Exception — handled explicitly. The transport cancels
+                # by closing the generator, and a cancelled stream is a PARTIAL run, not a
+                # successful one. Without this branch the `finally` below would emit
+                # RunCompleted and the ledger would record a cancelled request as "ok".
+                ctx.scoped("pipeline")["failed"] = True
+                self._bus.emit(
+                    RunFailed(
+                        run_id=ctx.run_id,
+                        runnable=ctx.runnable,
+                        kind=ctx.kind,
+                        root=ctx.root,
+                        provider=ctx.provider,
+                        input_sha256=input_hash,
+                        error="stream closed before completion",
+                        latency_ms=(perf_counter() - start) * 1000,
+                        input_tokens=ctx.usage.input_tokens,
+                        output_tokens=ctx.usage.output_tokens,
+                        cost_usd=ctx.usage.cost_usd,
+                    )
+                )
+                raise
+            except Exception as exc:
+                ctx.scoped("pipeline")["failed"] = True
+                self._bus.emit(
+                    RunFailed(
+                        run_id=ctx.run_id,
+                        runnable=ctx.runnable,
+                        kind=ctx.kind,
+                        root=ctx.root,
+                        provider=ctx.provider,
+                        input_sha256=input_hash,
+                        error=repr(exc),
+                        latency_ms=(perf_counter() - start) * 1000,
+                        input_tokens=ctx.usage.input_tokens,
+                        output_tokens=ctx.usage.output_tokens,
+                        cost_usd=ctx.usage.cost_usd,
+                    )
+                )
+                raise
+            finally:
+                # A `finally`, not an else: the transport cancels by CLOSING the
+                # generator, which raises GeneratorExit here. A cancelled stream still
+                # consumed budget and still belongs in the ledger.
+                if not ctx.scoped("pipeline").get("failed"):
+                    self._bus.emit(
+                        RunCompleted(
+                            run_id=ctx.run_id,
+                            runnable=ctx.runnable,
+                            kind=ctx.kind,
+                            root=ctx.root,
+                            provider=ctx.provider,
+                            input_sha256=input_hash,
+                            # A stream has no single typed Output.
+                            output_sha256=None,
+                            input_tokens=ctx.usage.input_tokens,
+                            output_tokens=ctx.usage.output_tokens,
+                            cost_usd=ctx.usage.cost_usd,
+                            latency_ms=(perf_counter() - start) * 1000,
+                        )
+                    )
 
     def scoped_names(self) -> list[str]:
         """Names of the middleware that participate in a streaming chain, in order."""
@@ -166,6 +240,8 @@ class Pipeline[InputT: BaseModel, OutputT: BaseModel]:
                 run_id=ctx.run_id,
                 runnable=ctx.runnable,
                 kind=ctx.kind,
+                root=ctx.root,
+                provider=ctx.provider,
                 input_sha256=input_hash,
             )
         )
@@ -178,9 +254,14 @@ class Pipeline[InputT: BaseModel, OutputT: BaseModel]:
                     run_id=ctx.run_id,
                     runnable=ctx.runnable,
                     kind=ctx.kind,
+                    root=ctx.root,
+                    provider=ctx.provider,
                     input_sha256=input_hash,
                     error=repr(exc),
                     latency_ms=(perf_counter() - start) * 1000,
+                    input_tokens=ctx.usage.input_tokens,
+                    output_tokens=ctx.usage.output_tokens,
+                    cost_usd=ctx.usage.cost_usd,
                 )
             )
             raise
@@ -189,6 +270,8 @@ class Pipeline[InputT: BaseModel, OutputT: BaseModel]:
                 run_id=ctx.run_id,
                 runnable=ctx.runnable,
                 kind=ctx.kind,
+                root=ctx.root,
+                provider=ctx.provider,
                 input_sha256=input_hash,
                 output_sha256=self._checked_hash(output),
                 input_tokens=ctx.usage.input_tokens,
@@ -207,6 +290,8 @@ class Pipeline[InputT: BaseModel, OutputT: BaseModel]:
                 run_id=ctx.run_id,
                 runnable=ctx.runnable,
                 kind=ctx.kind,
+                root=ctx.root,
+                provider=ctx.provider,
                 input_sha256=self._checked_hash(ctx.input),
                 blocked_by=entered[-1] if entered else "unknown",
                 error=str(exc),

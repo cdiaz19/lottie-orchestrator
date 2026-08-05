@@ -34,6 +34,8 @@ class RunEvent(BaseModel):
     run_id: str
     runnable: str
     kind: RunKind
+    root: bool = False
+    provider: str | None = None
 
 
 class RunStarted(RunEvent):
@@ -59,6 +61,9 @@ class RunFailed(RunEvent):
     input_sha256: str
     error: str
     latency_ms: float
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float = 0.0
 
 
 class RunBlocked(RunEvent):
