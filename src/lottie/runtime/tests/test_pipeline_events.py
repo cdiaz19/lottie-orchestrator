@@ -253,3 +253,25 @@ class TestHasherIsVerified:
 
     def test_a_real_sha256_passes(self) -> None:
         assert _pipe(EventBus()).execute(_Input(text="hi")).text == "HI"
+
+
+class TestProviderIsCarried:
+    """Regression: `provider` was added to the event models but never populated, so every
+    audit record silently lost the model id. Caught by lab Round 31 case 3."""
+
+    def test_the_provider_reaches_the_event(self) -> None:
+        bus, rec = _bus_with_recorder()
+        Pipeline(
+            runnable="Demo",
+            kind="agent",
+            provider="anthropic/claude-sonnet-4-6",
+            core=_core,
+            hasher=_hasher,
+            bus=bus,
+        ).execute(_Input(text="hi"))
+        assert all(e.provider == "anthropic/claude-sonnet-4-6" for e in rec.seen)
+
+    def test_a_provider_less_runnable_reports_none(self) -> None:
+        bus, rec = _bus_with_recorder()
+        _pipe(bus).execute(_Input(text="hi"))
+        assert all(e.provider is None for e in rec.seen)

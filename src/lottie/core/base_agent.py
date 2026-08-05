@@ -429,6 +429,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         return Pipeline(
             runnable=self.name,
             kind=self.kind,
+            provider=self.provider,
             core=lambda data: InstrumentedRunnable.run(self, data),
             hasher=hash_model_str,
             middleware=build_chain(self),  # type: ignore[arg-type]

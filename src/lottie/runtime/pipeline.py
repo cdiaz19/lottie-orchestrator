@@ -57,6 +57,7 @@ class Pipeline[InputT: BaseModel, OutputT: BaseModel]:
         runnable: str,
         kind: RunKind,
         core: Callable[[InputT], OutputT],
+        provider: str | None = None,
         hasher: Callable[[BaseModel], str],
         middleware: Sequence[Middleware] = (),
         bus: EventBus | None = None,
@@ -64,6 +65,7 @@ class Pipeline[InputT: BaseModel, OutputT: BaseModel]:
     ) -> None:
         self._runnable = runnable
         self._kind = kind
+        self._provider = provider
         self._core = core
         self._hasher = hasher
         self._chain = sorted(middleware, key=lambda m: m.order)
@@ -84,6 +86,7 @@ class Pipeline[InputT: BaseModel, OutputT: BaseModel]:
             input=data,
             run_id=uuid.uuid4().hex,
             usage=self._usage_factory(),
+            provider=self._provider,
         )
         entered: list[str] = []
         reached_core = False
@@ -125,6 +128,7 @@ class Pipeline[InputT: BaseModel, OutputT: BaseModel]:
             input=data,
             run_id=uuid.uuid4().hex,
             usage=self._usage_factory(),
+            provider=self._provider,
         )
         scoped = [m for m in self._chain if isinstance(m, ScopedMiddleware)]
         with ExitStack() as stack:
