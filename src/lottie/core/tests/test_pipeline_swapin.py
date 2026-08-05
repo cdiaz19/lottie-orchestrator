@@ -43,18 +43,14 @@ class _Probe(BaseAgent[_In, _Out]):
     def _verify(self, data: _In, output: _Out) -> None:
         self.log.append("verify")
 
-    def _load_recall(self) -> None:
-        self.log.append("recall_load")
-        super()._load_recall()
+    def _set_recall_prefix(self, prefix: str) -> None:
+        # V3 S5: recall moved to the memory subsystem; this is the seam it writes through.
+        if prefix == "":
+            self.log.append("recall_clear")
+        super()._set_recall_prefix(prefix)
 
     def _maybe_reflect(self, data: _In, output: _Out) -> None:
         self.log.append("reflect")
-
-    def _persist_trajectory(self, data: _In, output: _Out | None) -> None:
-        self.log.append("trajectory")
-
-    def _record_session_run(self, data: _In) -> None:
-        self.log.append("session")
 
 
 def _probe(log: list[str]) -> _Probe:
@@ -88,17 +84,35 @@ class TestChainComposition:
 
 
 class TestCallOrder:
-    def test_the_full_lifecycle_runs_in_the_documented_order(self) -> None:
+    def test_the_chain_is_ordered_as_documented(self) -> None:
+        """Asserts the CONTRACT rather than patched internals.
+
+        This test previously instrumented by overriding `_write_audit`,
+        `_persist_trajectory` and `_record_session_run` — all of which S4 and S5
+        legitimately relocated. The chain's declared order is the thing that actually
+        has to hold, and it does not move when ownership does.
+        """
+        chain = sorted(build_chain(_probe([])), key=lambda m: m.order)  # type: ignore[arg-type]
+        assert [m.name for m in chain] == [
+            "security_input",
+            "policy",
+            "cost",
+            "session",
+            "trajectory",
+            "depth",
+            "recall",
+            "reflect",
+            "security_output",
+            "verify",
+            "capability",
+        ]
+
+    def test_the_lifecycle_hooks_still_fire(self) -> None:
+        # Recall clears twice by design: once on entry (before loading) and once on the
+        # way out, so a disabled or failed recall never leaks a stale prefix.
         log: list[str] = []
         _probe(log).run(_In(task="t"))
-        assert log == [
-            "recall_load",
-            "execute",
-            "verify",
-            "reflect",
-            "trajectory",
-            "session",
-        ]
+        assert log == ["recall_clear", "execute", "verify", "reflect", "recall_clear"]
 
     def test_verify_runs_before_reflect(self) -> None:
         # `_verify` is fail-closed: a rejected output must not be learned from.
@@ -106,10 +120,10 @@ class TestCallOrder:
         _probe(log).run(_In(task="t"))
         assert log.index("verify") < log.index("reflect")
 
-    def test_trajectory_runs_before_session(self) -> None:
-        log: list[str] = []
-        _probe(log).run(_In(task="t"))
-        assert log.index("trajectory") < log.index("session")
+    def test_trajectory_posts_before_session(self) -> None:
+        # Post phases unroll in reverse, so a HIGHER order posts earlier.
+        by_name = {m.name: m.order for m in build_chain(_probe([]))}  # type: ignore[arg-type]
+        assert by_name["trajectory"] > by_name["session"]
 
 
 class TestAuditRootFlag:
@@ -184,7 +198,7 @@ class TestCapabilityWindow:
 
 
 class TestFailurePaths:
-    def test_a_failed_run_still_audits_and_records(self) -> None:
+    def test_a_failed_run_still_audits_and_records(self, tmp_path: Path) -> None:
         log: list[str] = []
 
         class _Failing(_Probe):
@@ -193,9 +207,11 @@ class TestFailurePaths:
                 raise ValueError("boom")
 
         agent = _Failing(log, llm=MockLLMProvider(responses=["ok"]), enable_benchmarks=False)
+        agent._audit = SqliteAuditLogger(tmp_path)
         with pytest.raises(ValueError):
             agent.run(_In(task="t"))
-        assert "trajectory" in log and "session" in log
+        rows = SqliteAuditLogger(tmp_path).query()
+        assert len(rows) == 1 and rows[0].status == "error"
 
     def test_a_failed_run_does_not_reflect(self) -> None:
         # Reflection distils a completed run; a failure has no outcome to learn from.
