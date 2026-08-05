@@ -9,7 +9,11 @@ import sys
 import typer
 from rich.console import Console
 
+from lottie.core.middleware import KNOWN_MODULES
 from lottie.project.config import find_project_root, load_agent_config, load_lottie_config
+
+#: Disabling one of these removes a fail-closed guarantee, so doctor says so loudly.
+_SECURITY_MODULES = frozenset({"security_input", "security_output", "policy", "capability"})
 
 # Provider prefix -> required env var. None means no key needed (e.g. local).
 _PROVIDER_ENV: dict[str, str | None] = {
@@ -111,6 +115,19 @@ def _learning_warnings() -> list[str]:
                 f"agent '{name}': trajectories are being written but never consulted "
                 "(recall and reflect are both off) — the store will grow unused."
             )
+        unknown = sorted(set(cfg.modules) - set(KNOWN_MODULES))
+        if unknown:
+            warnings.append(
+                f"agent '{name}': unknown module name(s) in the modules block: "
+                f"{', '.join(unknown)} — those lines do nothing. A typo here can leave a "
+                "gate mounted when you believe it is off."
+            )
+        for module_name, module in cfg.modules.items():
+            if not module.enabled and module_name in _SECURITY_MODULES:
+                warnings.append(
+                    f"agent '{name}': module '{module_name}' is DISABLED — this agent runs "
+                    "without that fail-closed gate."
+                )
         if cfg.harness.compaction.enabled and cfg.harness.compaction.keep_recent < 1:
             warnings.append(
                 f"agent '{name}': harness.compaction.keep_recent < 1 — the task itself "

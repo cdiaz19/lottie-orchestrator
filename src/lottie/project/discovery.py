@@ -276,6 +276,13 @@ def instantiate_agent(
             max_context_tokens=config.harness.compaction.max_context_tokens,
             keep_recent=config.harness.compaction.keep_recent,
         )
+    # V3 S6: the `modules:` block switches mounted modules off. A disabled module is
+    # never constructed, so it costs nothing at run time.
+    disabled = frozenset(
+        name for name, module in config.modules.items() if not module.enabled
+    )
+    if disabled:
+        agent.set_disabled_modules(disabled)
     # Rules 8 & 9: input/output security gate on the BaseAgent chokepoint. Attached only
     # when a caller injects one (the CLI passes serve.security.SecurityGate); serve leaves
     # it None and gates externally in AgentService, so no path is gated twice.

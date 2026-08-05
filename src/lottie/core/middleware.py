@@ -26,6 +26,7 @@ from lottie.governance.middleware import (
 )
 from lottie.runtime.context import ExecutionContext
 from lottie.runtime.middleware import Middleware, Next, Order
+from lottie.runtime.registry import ModuleConflictError
 from lottie.security.middleware import (
     SecurityInputMiddleware,
     SecurityOutputMiddleware,
@@ -106,7 +107,9 @@ class VerifyMiddleware:
 
 
 
-def build_chain(agent: BaseAgent[BaseModel, BaseModel]) -> list[Middleware]:
+def build_chain(
+    agent: BaseAgent[BaseModel, BaseModel], disabled: frozenset[str] = frozenset()
+) -> list[Middleware]:
     """The standard chain for an agent.
 
     Security, policy, cost and capability come from their OWNING subsystems (V3 S3) and
@@ -119,8 +122,12 @@ def build_chain(agent: BaseAgent[BaseModel, BaseModel]) -> list[Middleware]:
 
     `Pipeline` sorts by `order`, so this order is for readability only — the authority is
     `runtime.middleware.Order`.
+
+    `disabled` drops modules by name (V3 S6, the `modules:` config block). A dropped
+    module is never constructed, so it costs nothing at run time — the same "return None
+    from the factory" semantics the registry uses.
     """
-    return [
+    modules: list[Middleware] = [
         SecurityInputMiddleware(agent._security),
         PolicyMiddleware(agent._policy, agent._write_block),
         CostMiddleware(agent._cost, agent._write_block),
@@ -133,3 +140,43 @@ def build_chain(agent: BaseAgent[BaseModel, BaseModel]) -> list[Middleware]:
         VerifyMiddleware(agent),
         CapabilityMiddleware(agent._capabilities),
     ]
+    if disabled:
+        modules = [m for m in modules if m.name not in disabled]
+    _reject_order_conflicts(modules)
+    return modules
+
+
+def _reject_order_conflicts(modules: list[Middleware]) -> None:
+    """Fail at composition, not at run time.
+
+    Two modules claiming one chain position is ambiguous about who owns that slot, and a
+    plugin (E7) must never be able to silently displace a security gate. Raising here
+    surfaces it at startup where an operator sees it.
+    """
+    seen: dict[int, str] = {}
+    for module in modules:
+        clash = seen.get(module.order)
+        if clash is not None:
+            raise ModuleConflictError(
+                f"module {module.name!r} claims order {module.order}, "
+                f"already held by {clash!r}"
+            )
+        seen[module.order] = module.name
+
+
+#: Every module name the standard chain can mount. `lottie modules` and `lottie doctor`
+#: use it to reject a `modules:` block naming something that does not exist — a silent
+#: typo there would leave a security gate mounted when the operator believed otherwise.
+KNOWN_MODULES = (
+    "security_input",
+    "policy",
+    "cost",
+    "session",
+    "trajectory",
+    "depth",
+    "recall",
+    "reflect",
+    "security_output",
+    "verify",
+    "capability",
+)
