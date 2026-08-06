@@ -4,23 +4,31 @@ Owned by the memory subsystem. Each takes the memory client (or a gateway callba
 its own configuration — no `BaseAgent` — which is what lets `core` stop importing
 `memory.recall`, `memory.reflection` and `memory.schema`.
 
-Reflection is deliberately NOT here. `_maybe_reflect` re-enters the agent's own
-`complete()` with a hand-primed usage context so the per-run token cap counts
-cumulatively; extracting it would need a host Protocol that is `BaseAgent` in all but
-spelling. It becomes a real module once E4 owns message assembly and the run budget is
-itself a module. Recorded rather than faked.
+Reflection is here too, as of E4 S2. The blocker recorded in V3 S5 was that
+`_maybe_reflect` re-entered the agent's own `complete()` with a hand-primed usage context.
+The thing that actually unblocks it is not the Context Compiler but a narrow
+`BudgetedCaller` Protocol: the module asks for "an LLM call that counts against this run's
+budget" and does not need to know how that is arranged. That could have been done in S5;
+saying so is more useful than crediting the wrong slice.
 """
 
 from __future__ import annotations
 
 import warnings
 from collections.abc import Callable
+from typing import Protocol
 
 from pydantic import BaseModel
 
+from lottie.llm import Message
 from lottie.memory.base import MemoryClient
 from lottie.memory.recall import RecalledMemory, render_as_data
-from lottie.memory.reflection import RunTrajectory, clip
+from lottie.memory.reflection import (
+    RunTrajectory,
+    build_reflection_prompt,
+    clip,
+    parse_reflection,
+)
 from lottie.memory.schema import (
     DeltaOp,
     MemoryDelta,
@@ -171,3 +179,77 @@ class TrajectoryMiddleware:
             return output
         finally:
             self._persist(ctx, output)
+
+
+class BudgetedCaller(Protocol):
+    """An LLM call that counts against the current run's budget.
+
+    The whole coupling reflection actually needed. `BaseAgent` implements it by priming a
+    usage context and routing through `complete()`; this module never has to know that,
+    which is what makes it a module rather than a method with extra steps.
+
+    Raises the run's own budget exceptions, which the caller lets through — a cap trip is
+    the run's decision, not reflection's to swallow.
+    """
+
+    def __call__(self, messages: list[Message]) -> str: ...
+
+
+class ReflectMiddleware:
+    """Distil a finished run into memory lessons through the gateway (rule 13b).
+
+    Opt-in, best-effort, and only on SUCCESS: reflection distils a completed run, and a
+    failed run has no outcome to learn from. Never raises — a reflection failure must not
+    fail an already-successful run.
+    """
+
+    name = "reflect"
+    order = Order.REFLECT
+
+    def __init__(
+        self,
+        call: BudgetedCaller,
+        apply_deltas: DeltaApplier,
+        usage: UsageReader,
+        *,
+        enabled: bool,
+        namespace: str,
+        max_run_tokens: int | None,
+    ) -> None:
+        self._call = call
+        self._apply = apply_deltas
+        self._usage = usage
+        self._enabled = enabled
+        self._namespace = namespace
+        self._max_run_tokens = max_run_tokens
+
+    def _reflect(self, ctx: ExecutionContext, output: BaseModel) -> None:
+        if not self._enabled:
+            return
+        m = self._usage()
+        used = (m.input_tokens + m.output_tokens) if m is not None else 0
+        if self._max_run_tokens is not None and used >= self._max_run_tokens:
+            # Skip-when-exhausted: learning must never be the thing that overspends.
+            warnings.warn("reflection skipped: run token cap reached", stacklevel=2)
+            return
+        try:
+            trajectory = RunTrajectory(
+                task=ctx.input.model_dump_json(),
+                outcome=output.model_dump_json(),
+                success=True,
+                input_tokens=m.input_tokens if m is not None else 0,
+                output_tokens=m.output_tokens if m is not None else 0,
+                cost_usd=m.cost_usd if m is not None else 0.0,
+                latency_ms=m.latency_ms if m is not None else 0.0,
+            )
+            deltas = parse_reflection(self._call(build_reflection_prompt(trajectory)))
+            if deltas:
+                self._apply(deltas, self._namespace, MemoryOrigin.REFLECTION)
+        except Exception as exc:  # best-effort — never fail an already-successful run
+            warnings.warn(f"reflection failed: {exc}", stacklevel=2)
+
+    def __call__(self, ctx: ExecutionContext, nxt: Next) -> BaseModel:
+        output = nxt(ctx)
+        # Deliberately NOT in a finally: a failed run has no outcome to learn from.
+        self._reflect(ctx, output)
+        return output

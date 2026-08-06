@@ -49,12 +49,19 @@ class _Probe(BaseAgent[_In, _Out]):
             self.log.append("recall_clear")
         super()._set_recall_prefix(prefix)
 
-    def _maybe_reflect(self, data: _In, output: _Out) -> None:
+    def _budgeted_call(self, messages: list[object]) -> str:  # type: ignore[override]
+        # E4 S2: reflection is a module now and asks only for a budgeted LLM call.
+        # Instrumenting that seam observes the same lifecycle point the old
+        # `_maybe_reflect` override did.
         self.log.append("reflect")
+        return ""
 
 
 def _probe(log: list[str]) -> _Probe:
-    return _Probe(log, llm=MockLLMProvider(responses=["ok"]), enable_benchmarks=False)
+    agent = _Probe(log, llm=MockLLMProvider(responses=["ok"]), enable_benchmarks=False)
+    # Reflection is opt-in; enable it so the lifecycle assertion observes that hook.
+    agent.set_reflect(enabled=True, namespace="probe")
+    return agent
 
 
 class TestChainComposition:

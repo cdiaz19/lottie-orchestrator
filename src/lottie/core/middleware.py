@@ -73,23 +73,6 @@ class DepthMiddleware:
 
 
 
-class ReflectMiddleware:
-    """Opt-in post-run reflexive write-back. Only fires on a successful run."""
-
-    name = "reflect"
-    order = Order.REFLECT
-
-    def __init__(self, agent: BaseAgent[BaseModel, BaseModel]) -> None:
-        self._agent = agent
-
-    def __call__(self, ctx: ExecutionContext, nxt: Next) -> BaseModel:
-        output = nxt(ctx)
-        # Deliberately NOT in a finally: reflection distils a completed run, and a failed
-        # run has no outcome to learn from. Matches `run()`'s success-path placement.
-        self._agent._maybe_reflect(ctx.input, output)
-        return output
-
-
 
 class VerifyMiddleware:
     """Agent post-condition hook, fail-closed before success is declared."""
@@ -135,7 +118,7 @@ def build_chain(
         agent._trajectory_module(),
         DepthMiddleware(agent),
         agent._recall_module(),
-        ReflectMiddleware(agent),
+        agent._reflect_module(),
         SecurityOutputMiddleware(agent._security),
         VerifyMiddleware(agent),
         CapabilityMiddleware(agent._capabilities),
