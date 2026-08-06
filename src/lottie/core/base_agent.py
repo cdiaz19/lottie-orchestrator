@@ -39,11 +39,11 @@ from lottie.llm import LLMProvider, LLMResponse, Message
 from lottie.llm.base import StreamResult
 from lottie.memory.base import MemoryClient, NullMemoryClient
 from lottie.memory.compaction import compact, estimate_tokens
-from lottie.memory.middleware import RecallMiddleware, RunUsage, TrajectoryMiddleware
-from lottie.memory.reflection import (
-    RunTrajectory,
-    build_reflection_prompt,
-    parse_reflection,
+from lottie.memory.middleware import (
+    RecallMiddleware,
+    ReflectMiddleware,
+    RunUsage,
+    TrajectoryMiddleware,
 )
 from lottie.memory.schema import (
     MemoryDelta,
@@ -352,16 +352,26 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
     def _apply_deltas(
         self, deltas: list[MemoryDelta], namespace: str, origin: MemoryOrigin
     ) -> None:
-        """Rule 13b: every learned write goes through the MemoryAgent gateway."""
+        """Rule 13b: every learned write goes through the MemoryAgent gateway.
+
+        Tier follows origin: a trajectory is an EPISODIC event, a reflection lesson is a
+        SEMANTIC note. Deriving it here keeps both modules from having to know the tier
+        taxonomy at all.
+        """
         # lazy import: avoids a core<->memory.agent import cycle
         from lottie.memory.agent import MemoryAgent
 
+        tier = (
+            MemoryTier.SEMANTIC
+            if origin is MemoryOrigin.REFLECTION
+            else MemoryTier.EPISODIC
+        )
         MemoryAgent(llm=self.llm, memory=self.memory, audit=self._audit).apply(
             deltas,
             namespace=namespace,
             source_agent=self.name,
             origin=origin,
-            tier=MemoryTier.EPISODIC,
+            tier=tier,
         )
 
     def _trajectory_module(self) -> TrajectoryMiddleware:
@@ -405,55 +415,36 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
     def _set_session_state(self, state: SessionState) -> None:
         self._session = state
 
-    def _maybe_reflect(self, data: InputT, output: OutputT) -> None:
-        """Best-effort: distill the finished run into memory lessons via the gateway.
+    def _budgeted_call(self, messages: list[Message]) -> str:
+        """An LLM call that counts against THIS run's budget (the `BudgetedCaller` seam).
 
-        Routes the reflection LLM call through self.complete() with a RunContext primed
-        to the run's spent tokens, so the per-run token cap enforces (skip-when-exhausted).
-        Never raises — reflection failure must not fail the already-successful run.
+        Primes a usage context with the run's spent tokens so `_enforce_token_cap` counts
+        cumulatively, then routes through `complete()`. Reflection asks only for "a call
+        that counts"; arranging that is the agent's business, not the module's.
         """
-        if not self._reflect_enabled:
-            return
         m = self.last_metrics
         used = (m.input_tokens + m.output_tokens) if m is not None else 0
-        if self._max_run_tokens is not None and used >= self._max_run_tokens:
-            warnings.warn("reflection skipped: run token cap reached", stacklevel=2)
-            return
-        self._recall_prefix = ""  # reflection gets no recalled context of its own
+        self._recall_prefix = ""  # a reflection call gets no recalled context of its own
+        ctx = RunContext()
+        ctx.input_tokens = used
+        ctx.cost_usd = m.cost_usd if m is not None else 0.0
+        self._active_ctx = ctx
         try:
-            trajectory = RunTrajectory(
-                task=data.model_dump_json(),
-                outcome=output.model_dump_json(),
-                success=True,
-                input_tokens=m.input_tokens if m is not None else 0,
-                output_tokens=m.output_tokens if m is not None else 0,
-                cost_usd=m.cost_usd if m is not None else 0.0,
-                latency_ms=m.latency_ms if m is not None else 0.0,
-            )
-            ctx = RunContext()
-            ctx.input_tokens = used  # prime so _enforce_token_cap counts cumulatively
-            ctx.cost_usd = m.cost_usd if m is not None else 0.0
-            self._active_ctx = ctx
             with run_span(f"{self.name}.reflect", self.kind):
-                response = self.complete(build_reflection_prompt(trajectory))
-                deltas = parse_reflection(response.content)
-                if deltas:
-                    # lazy import: avoids a core<->memory.agent import cycle
-                    from lottie.memory.agent import MemoryAgent
-
-                    gateway = MemoryAgent(llm=self.llm, memory=self.memory, audit=self._audit)
-                    gateway.apply(
-                        deltas,
-                        namespace=self._reflect_namespace,
-                        source_agent=self.name,
-                        origin=MemoryOrigin.REFLECTION,
-                    )
-        except (TokenCapExceeded, TurnLimitExceeded) as exc:
-            warnings.warn(f"reflection skipped: {exc}", stacklevel=2)
-        except Exception as exc:  # best-effort — never fail the run
-            warnings.warn(f"reflection failed: {exc}", stacklevel=2)
+                return self.complete(messages).content
         finally:
             self._active_ctx = None
+
+    def _reflect_module(self) -> ReflectMiddleware:
+        """Reflection, owned by the memory subsystem (E4 S2)."""
+        return ReflectMiddleware(
+            self._budgeted_call,
+            self._apply_deltas,
+            self._run_usage,
+            enabled=self._reflect_enabled,
+            namespace=self._reflect_namespace,
+            max_run_tokens=self._max_run_tokens,
+        )
 
     @property
     def provider(self) -> str | None:

@@ -7,6 +7,7 @@ from lottie.core.metrics import RunMetrics
 from lottie.llm import MockLLMProvider
 from lottie.memory.mock import MockMemoryClient
 from lottie.memory.schema import MemoryOrigin, MemoryQuery, MemoryTier
+from lottie.runtime.context import ExecutionContext
 
 
 class _In(BaseModel):
@@ -64,5 +65,8 @@ def test_reflection_skipped_when_token_cap_reached() -> None:
         latency_ms=1.0, input_tokens=5, output_tokens=5, cost_usd=0.0, retry_count=0,
         success=True, version=None, error=None,
     )
-    agent._maybe_reflect(_In(q="hi"), _Out(a="answer"))
+    agent._reflect_module()._reflect(
+        ExecutionContext(runnable=agent.name, kind="agent", input=_In(q="hi"), run_id="r"),
+        _Out(a="answer"),
+    )
     assert mem.records == []  # cap already reached -> reflection skipped
