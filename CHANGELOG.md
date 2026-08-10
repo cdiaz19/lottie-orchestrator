@@ -4,6 +4,62 @@ All notable changes to Lottie Orchestrator. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions are
 [semver](https://semver.org/).
 
+## [3.1.0] — 2026-08-10
+
+**"Assembly gets an authority."** E4 gives message assembly an ordering authority, a
+cross-source budget, and provenance — and finishes the module extraction V3 started.
+
+Two slices (S1–S2), each validated downstream by a `lottie-lab` round (R34–R35).
+
+### Added
+
+- **`lottie.context.ContextCompiler`** — sources emit in declared order, the token ceiling
+  is applied across all of them, and `CompileResult.contributions` records what each source
+  cost. That last one closes the provenance gap: it answers *"which source filled the
+  window?"*, which is exactly the question when a prompt gets expensive.
+- **Pinning moved from role to source.** S5a had to pin on `role == "system"` because role
+  was the only signal available — but a knowledge block and the recall block are *both*
+  system messages, and only the recall block is load-bearing (S2a's anti-poisoning
+  contract). Pinning is a source property now.
+- **A drop policy that can choose.** Over budget, the compiler gives up the
+  **lowest-order** droppable source — furthest from the task, so least contextually
+  relevant — summarises rather than drops when a summariser exists, and stops as soon as
+  the prompt fits. Compaction could only ever summarise by position.
+
+### Changed
+
+- **Reflection is a module.** `_maybe_reflect` left `BaseAgent` for
+  `memory/middleware.py`, joining recall and trajectory.
+- **Memory tier follows origin.** A trajectory is an EPISODIC event, a reflection lesson a
+  SEMANTIC note — derived once in the gateway call so neither module knows the taxonomy.
+
+### A prediction that was wrong, corrected
+
+V3 S5 recorded that reflection could not become a module because it re-enters the agent's
+own `complete()` with hand-primed budget state, and said **E4's Context Compiler would
+unblock it**. That was wrong. What reflection actually needed is a narrow `BudgetedCaller`
+Protocol — *"an LLM call that counts against this run's budget"* — and nothing to do with
+message assembly. It could have been done in V3 S5.
+
+### Scope limits, stated rather than implied
+
+- **Every source shipped today is pinned**, so the drop policy cannot yet shrink a real
+  prompt — compaction still does that, now called once at the end of assembly rather than
+  mid-way. The policy is implemented and exercised (lab R34 cases 5–8 use a synthetic
+  droppable source), but the *"drop stale knowledge before recent turns"* win needs
+  knowledge wired in as a droppable source.
+- **The import metric.** V3's headline was `core/base_agent.py`: **6 subsystem imports → 1**.
+  Counting only the subsystem edges V3 set out to reverse — `governance`, `llm`, `memory` —
+  it is at **3**; the `security` edge is gone. Counting every package, it is 5, two of which
+  (`runtime`, `context`) are kernel-side and are the *intended* direction. The remaining
+  three are the `self.memory`/`self.llm` DI fields, the delta types, and constructing the
+  modules — the last of which is what a registry-driven orchestrator addresses.
+
+### Backward compatibility
+
+`complete(messages)` keeps its signature, so no agent changed. A 3.0.0 project behaves
+identically.
+
 ## [3.0.0] — 2026-08-05
 
 **"A runtime, not a base class."** V3 extracts an execution kernel so cross-cutting
