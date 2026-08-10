@@ -245,7 +245,8 @@ lottie serve --port 8000
 | `v1.0.0` | V1 — Hardening | "complete, secured, documented": rule-11 capability enforcement, BaseAgent/CLI security gate, per-run token cap + TOCTOU-safe atomic cost reservation, HTTP auth/rate-limit/pagination, HITL edited_input, agentic hygiene (`max_turns` + `_verify`) | ✅ |
 | `v2.0.0` | V2 — Self-learning & harness | persistent memory + fail-closed write gateway, recall-as-data, reflexive write-back, episodic trajectories, skill distillation to prompt templates (never codegen) with human promotion, learning-delta benchmark, context compaction, resumable sessions | ✅ |
 | `v3.0.0` | V3 — Runtime kernel | execution kernel (abort-capable middleware chain + fail-open event stream), one execution path for `run`/`run_stream`, modules owned by their subsystems, auditing as a subscriber, `lottie modules` + config-driven module control | ✅ |
-| _next_ | V3.1+ | Context Compiler (3.1), Provider Router (3.2), Execution Planner (3.3), Plugin SDK (3.4) | ◻ |
+| `v3.1.0` | E4 — Context Compiler | ordered, budgeted, provenance-carrying message assembly; pinning by source; reflection as a module | ✅ |
+| _next_ | V3.2+ | Provider Router (3.2), Execution Planner (3.3), Plugin SDK (3.4) | ◻ |
 
 It's verified in the open — see the [lottie-lab](https://github.com/cdiaz19/lottie-lab) round-by-round test harness.
 
