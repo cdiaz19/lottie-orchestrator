@@ -78,7 +78,7 @@ class CompactionConfig(BaseModel):
     """
 
     enabled: bool = False
-    max_context_tokens: int = 8000  # approximate; see memory/compaction.py
+    max_context_tokens: int = 8000  # approximate; see context/compaction.py
     keep_recent: int = 6            # most recent turns kept verbatim; must be >= 1
 
 

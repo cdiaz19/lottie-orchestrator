@@ -26,6 +26,7 @@ from skills.retrieval.skill import RetrievalSkill
 from skills.summarizer.schema import SummarizerInput
 from skills.summarizer.skill import SummarizerSkill
 
+from lottie.context.compiler import ContextSource, StaticSource
 from lottie.core import BaseAgent
 from lottie.knowledge import (
     GraphStore,
@@ -166,29 +167,37 @@ class ResearchAgent(BaseAgent[ResearchInput, ResearchOutput]):
         # 2. Retrieve hits — only through the skill, never the store directly
         hits = self._retrieval.run(RetrievalSkillInput(query=rq)).result.hits
 
-        # 3. Build grounded numbered context.
+        # 3. Build grounded numbered context as a SEPARATE, DROPPABLE source.
         # Retrieved chunk text was already scanned by PromptInjectionScanSkill
         # at ingest time (CLAUDE.md rule 10) — no re-scan needed here.
+        #
+        # Passed via `complete(context=...)` rather than concatenated into the user
+        # message: concatenated context can only be compacted by POSITION, whereas a
+        # separate source can be dropped or summarised on its own when the prompt is
+        # over budget. Knowledge is the right thing to give up first — it is furthest
+        # from the task, and the query itself must always survive.
+        knowledge: list[ContextSource] = []
         if hits:
-            context_lines: list[str] = []
-            for i, hit in enumerate(hits, start=1):
-                context_lines.append(
-                    f"[{i}] (doc_id={hit.chunk.doc_id})\n{hit.chunk.text}"
+            context_lines = [
+                f"[{i}] (doc_id={hit.chunk.doc_id})\n{hit.chunk.text}"
+                for i, hit in enumerate(hits, start=1)
+            ]
+            knowledge.append(
+                StaticSource(
+                    "knowledge",
+                    10,
+                    [Message(role="system", content="Context:\n" + "\n\n".join(context_lines))],
+                    pinned=False,
                 )
-            context = "\n\n".join(context_lines)
-        else:
-            context = "No relevant knowledge found."
-
-        user_content = (
-            f"Query: {data.query}\n\nContext:\n{context}"
-        )
+            )
 
         # 4. LLM reasoning — tokens auto-accumulated via self.complete
         response = self.complete(
             [
                 Message(role="system", content=SYSTEM_PROMPT),
-                Message(role="user", content=user_content),
-            ]
+                Message(role="user", content=f"Query: {data.query}"),
+            ],
+            context=knowledge,
         )
 
         # 5. Summarise LLM response into digest + bullets

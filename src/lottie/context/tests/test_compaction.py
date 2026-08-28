@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from lottie.context.compaction import SUMMARY_PREFIX, compact, estimate_tokens
 from lottie.llm import Message, Role
-from lottie.memory.compaction import SUMMARY_PREFIX, compact, estimate_tokens
 
 
 def _msg(role: Role, content: str) -> Message:

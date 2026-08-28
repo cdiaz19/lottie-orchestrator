@@ -7,10 +7,10 @@ import warnings
 import pytest
 from pydantic import BaseModel
 
+from lottie.context.compaction import SUMMARY_PREFIX
 from lottie.core.base_agent import BaseAgent
 from lottie.governance.cost import TokenCapExceeded
 from lottie.llm import Message, MockLLMProvider
-from lottie.memory.compaction import SUMMARY_PREFIX
 
 
 class _Input(BaseModel):
@@ -146,7 +146,10 @@ class TestBestEffort:
             raise RuntimeError("summariser down")
 
         agent._summarize_span = _boom  # type: ignore[method-assign]
-        with pytest.warns(UserWarning, match="compaction failed"):
+        # E4 S4 moved compaction inside the compiler, so a summariser outage is now an
+        # ASSEMBLY failure. The underlying exception is still in the message, so the
+        # operator loses no diagnosis — only the label changed.
+        with pytest.warns(UserWarning, match="context assembly failed"):
             agent.run(_Input(task="t"))
 
     def test_a_budget_stop_is_not_swallowed(self) -> None:
