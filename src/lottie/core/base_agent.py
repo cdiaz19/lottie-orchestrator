@@ -10,14 +10,14 @@ from __future__ import annotations
 import contextvars
 import warnings
 from abc import abstractmethod
-from collections.abc import Generator, Iterator, Mapping
+from collections.abc import Generator, Iterator, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Literal
 
 from pydantic import BaseModel
 
-from lottie.context.compiler import StaticSource, compile_context
+from lottie.context.compiler import ContextSource, StaticSource, compile_context
 from lottie.core.metrics import Kind, RunContext
 from lottie.core.runnable import InstrumentedRunnable
 from lottie.core.security_gate import NullSecurityGate, SecurityGateProtocol
@@ -247,14 +247,21 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
             self._enforce_token_cap()
         return response.content
 
-    def _context_sources(self, messages: list[Message]) -> list[StaticSource]:
+    def _context_sources(
+        self, messages: list[Message], extra: Sequence[ContextSource] = ()
+    ) -> list[ContextSource]:
         """The sources that make up a prompt, in assembly order (E4).
 
         Pinning is a SOURCE property now, not a role check. Recall is pinned because
         recall-as-data is the S2a anti-poisoning contract; the agent's own messages are
         pinned because dropping the task is never the right trade.
+
+        `extra` is what an agent supplies through `complete(context=...)` — typically
+        retrieved knowledge, which is DROPPABLE. That is what makes the drop policy
+        reachable: without a droppable source the compiler has nothing it is allowed to
+        give up, and a prompt over budget can only be compacted by position.
         """
-        sources: list[StaticSource] = []
+        sources: list[ContextSource] = list(extra)
         if self._recall_prefix:
             sources.append(
                 StaticSource(
@@ -267,7 +274,9 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         sources.append(StaticSource("agent", 90, messages, pinned=True))
         return sources
 
-    def _compile_context(self, messages: list[Message]) -> list[Message]:
+    def _compile_context(
+        self, messages: list[Message], extra: Sequence[ContextSource] = ()
+    ) -> list[Message]:
         """Assemble the prompt through the compiler. Best-effort, as compaction was.
 
         A compiler failure sends the un-compiled prompt and warns — the provider's own
@@ -276,7 +285,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         """
         try:
             result = compile_context(
-                self._context_sources(messages),
+                self._context_sources(messages, extra),
                 max_tokens=self._max_context_tokens if self._compaction_enabled else None,
                 summarize=self._summarize_span if self._compaction_enabled else None,
             )
@@ -563,13 +572,18 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         self,
         messages: list[Message],
         model_params: Mapping[str, object] | None = None,
+        context: Sequence[ContextSource] | None = None,
     ) -> LLMResponse:
         """Run an LLM completion, accumulating tokens/cost into the active run.
 
-        When recall is enabled and produced context, a leading data-framed system
-        message is prepended (recall-as-data; never instructions).
+        `context` lets an agent supply retrieved material as SEPARATE, droppable sources
+        rather than concatenating it into the task string. That separation is what lets
+        the compiler drop stale knowledge before recent turns when a prompt is over
+        budget — concatenated context can only be compacted by position.
+
+        Optional and defaulted, so every existing caller is unaffected.
         """
-        messages = self._compile_context(messages)
+        messages = self._compile_context(messages, context or ())
         response = self.llm.complete(messages, model_params)
         if self._active_ctx is not None:
             self._active_ctx.add_usage(response.usage, response.cost_usd)

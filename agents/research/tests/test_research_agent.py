@@ -135,17 +135,44 @@ def test_research_points_reflect_summarizer_bullets() -> None:
 
 
 def test_research_prompt_contains_retrieved_chunk_text() -> None:
-    """The grounded context from hits is included in the user message to the agent LLM."""
+    """The grounded context from hits reaches the agent LLM.
+
+    E4 S4 moved knowledge out of the user message and into a separate DROPPABLE
+    context source, so it now arrives as its own message rather than concatenated
+    into the query. The guarantee that matters — the retrieved text reaches the
+    prompt — is unchanged, so the assertion is over the whole prompt.
+    """
     retrieval, summarizer, agent_llm, _ = _make_seeded_deps()
     agent = ResearchAgent(agent_llm, retrieval=retrieval, summarizer=summarizer)
 
     agent.run(ResearchInput(query="multi-agent AI", k=3))
 
-    # agent_llm.calls[0] is the messages list sent to self.complete
     assert len(agent_llm.calls) == 1
-    user_message = next(m for m in agent_llm.calls[0] if m.role == "user")
-    # The fixture chunk text must appear verbatim in the user message content
-    assert _FIXTURE_CHUNK.text in user_message.content
+    prompt = "\n".join(m.content for m in agent_llm.calls[0])
+    assert _FIXTURE_CHUNK.text in prompt
+
+
+def test_research_query_survives_when_knowledge_is_dropped() -> None:
+    """Knowledge is droppable; the query is not.
+
+    The point of E4 S4: over budget, the compiler gives up retrieved knowledge before
+    it touches the task. Concatenated context could only ever be compacted by position,
+    which is how a query used to get summarised away along with its own grounding.
+    """
+    retrieval, summarizer, _, _ = _make_seeded_deps()
+    # Two responses: summarising the droppable knowledge consumes one, the real
+    # completion the other.
+    agent_llm = MockLLMProvider(["a summary of the context", _AGENT_LLM_RESPONSE])
+    agent = ResearchAgent(agent_llm, retrieval=retrieval, summarizer=summarizer)
+    # A ceiling far below the retrieved context forces the drop policy to act.
+    agent.set_compaction(enabled=True, max_context_tokens=1, keep_recent=6)
+
+    agent.run(ResearchInput(query="multi-agent AI", k=3))
+
+    final_prompt = "\n".join(m.content for m in agent_llm.calls[-1])
+    assert "multi-agent AI" in final_prompt
+    # …and the verbatim knowledge is gone, replaced by its summary.
+    assert _FIXTURE_CHUNK.text not in final_prompt
 
 
 # ---------------------------------------------------------------------------

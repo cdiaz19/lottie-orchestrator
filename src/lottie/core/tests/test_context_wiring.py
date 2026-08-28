@@ -11,7 +11,7 @@ import warnings
 import pytest
 from pydantic import BaseModel
 
-from lottie.context.compiler import StaticSource
+from lottie.context.compiler import ContextSource
 from lottie.core.base_agent import BaseAgent
 from lottie.llm import Message, MockLLMProvider
 
@@ -86,7 +86,7 @@ class TestBestEffort:
     def test_an_assembly_failure_sends_the_prompt_as_is(self) -> None:
         agent = _agent()
 
-        def _boom(messages: list[Message]) -> list[StaticSource]:
+        def _boom(messages: list[Message], extra: object = ()) -> list[ContextSource]:
             raise RuntimeError("assembly down")
 
         agent._context_sources = _boom  # type: ignore[method-assign]
@@ -98,7 +98,7 @@ class TestBestEffort:
     def test_an_assembly_failure_warns(self) -> None:
         agent = _agent()
 
-        def _boom(messages: list[Message]) -> list[StaticSource]:
+        def _boom(messages: list[Message], extra: object = ()) -> list[ContextSource]:
             raise RuntimeError("assembly down")
 
         agent._context_sources = _boom  # type: ignore[method-assign]
@@ -118,7 +118,7 @@ class TestBudgetStopIsNotSwallowed:
 
         agent = _agent()
 
-        def _cap(messages: list[Message]) -> list[StaticSource]:
+        def _cap(messages: list[Message], extra: object = ()) -> list[ContextSource]:
             raise TokenCapExceeded("cap reached")
 
         agent._context_sources = _cap  # type: ignore[method-assign]
@@ -130,7 +130,7 @@ class TestBudgetStopIsNotSwallowed:
 
         agent = _agent()
 
-        def _turns(messages: list[Message]) -> list[StaticSource]:
+        def _turns(messages: list[Message], extra: object = ()) -> list[ContextSource]:
             raise TurnLimitExceeded("too many turns")
 
         agent._context_sources = _turns  # type: ignore[method-assign]
