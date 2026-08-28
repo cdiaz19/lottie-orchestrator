@@ -24,8 +24,8 @@ from typing import Protocol
 
 from pydantic import BaseModel
 
+from lottie.context.compaction import compact, estimate_tokens
 from lottie.llm import Message
-from lottie.memory.compaction import estimate_tokens
 
 
 class ContextSource(Protocol):
@@ -87,6 +87,7 @@ def compile_context(
     *,
     max_tokens: int | None = None,
     summarize: Callable[[list[Message]], str] | None = None,
+    keep_recent: int = 6,
 ) -> CompileResult:
     """Assemble `sources` in order, applying the budget when one is set.
 
@@ -99,10 +100,15 @@ def compile_context(
     3. Still over, and a summariser is available → summarise the remaining droppable
        content rather than dropping it outright.
 
-    Pinned sources are never dropped and never summarised. When only pinned sources
-    remain and the prompt is still over budget, the result is returned as-is: silently
-    discarding a pinned source to hit a number would break the caller's contract, and the
-    provider's own error is a better failure than a corrupted prompt.
+    4. Still over with only PINNED sources left → fall back to compacting their older
+       messages, keeping the most recent `keep_recent`. This is the case that matters for
+       a long conversation: the turns are all pinned, so the only thing left to give up is
+       history, and losing the oldest turns beats overflowing the window.
+
+    A pinned source is never DROPPED. Step 4 may summarise its older messages, which is a
+    different thing — the source still contributes, in condensed form. When even that is
+    not enough the result is returned as-is: the provider's own error is a better failure
+    than a silently truncated prompt.
     """
     ordered = sorted(sources, key=lambda s: s.order)
     emitted: list[tuple[ContextSource, list[Message]]] = [(s, s.emit()) for s in ordered]
@@ -143,4 +149,21 @@ def compile_context(
         if estimate_tokens(_assemble(dropped)) <= max_tokens:
             break
 
-    return CompileResult(messages=_assemble(dropped), contributions=contributions)
+    assembled = _assemble(dropped)
+    if summarize is not None and estimate_tokens(assembled) > max_tokens:
+        # Only pinned sources are left, so source-pinning can no longer discriminate —
+        # everything here is pinned. Within a surviving source, ROLE is the right signal:
+        # system messages are structural (the system prompt, the recall-as-data block)
+        # while user/assistant turns are conversational history that compacts by recency.
+        #
+        # Two different questions, answered at two different levels: which SOURCES
+        # survive, then which MESSAGES within them.
+        assembled = compact(
+            assembled,
+            max_tokens=max_tokens,
+            keep_recent=keep_recent,
+            pinned=lambda m: m.role == "system",
+            summarize=summarize,
+        )
+
+    return CompileResult(messages=assembled, contributions=contributions)

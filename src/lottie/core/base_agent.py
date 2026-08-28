@@ -38,7 +38,6 @@ from lottie.governance.schema import AuditRecord
 from lottie.llm import LLMProvider, LLMResponse, Message
 from lottie.llm.base import StreamResult
 from lottie.memory.base import MemoryClient, NullMemoryClient
-from lottie.memory.compaction import compact, estimate_tokens
 from lottie.memory.middleware import (
     RecallMiddleware,
     ReflectMiddleware,
@@ -288,40 +287,13 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
                 self._context_sources(messages, extra),
                 max_tokens=self._max_context_tokens if self._compaction_enabled else None,
                 summarize=self._summarize_span if self._compaction_enabled else None,
+                keep_recent=self._keep_recent,
             )
-            compiled = result.messages
+            return result.messages
         except (TokenCapExceeded, TurnLimitExceeded):
             raise  # a budget stop is the run's decision, not assembly's to swallow
         except Exception as exc:
             warnings.warn(f"context assembly failed, sending as-is: {exc}", stacklevel=2)
-            return self._maybe_compact(messages)
-        # Every source is pinned today, so the compiler cannot shrink an over-budget
-        # prompt on its own. Compaction still runs over the assembled result — the same
-        # pure function, now called once at the end of assembly rather than mid-way.
-        return self._maybe_compact(compiled)
-
-    def _maybe_compact(self, messages: list[Message]) -> list[Message]:
-        """Best-effort compaction. A failure sends the uncompacted prompt rather than
-        failing the run — the provider's own context error is a clearer signal than a
-        summariser outage masquerading as a task failure."""
-        if not self._compaction_enabled:
-            return messages
-        if estimate_tokens(messages) <= self._max_context_tokens:
-            return messages  # cheap guard: no LLM call on a run that never grows
-        try:
-            return compact(
-                messages,
-                max_tokens=self._max_context_tokens,
-                keep_recent=self._keep_recent,
-                # System messages carry the recall-as-data block, which is a security
-                # contract (S2a) — compacting it away would silently weaken it.
-                pinned=lambda m: m.role == "system",
-                summarize=self._summarize_span,
-            )
-        except (TokenCapExceeded, TurnLimitExceeded):
-            raise  # a budget stop is the run's decision, not compaction's to swallow
-        except Exception as exc:
-            warnings.warn(f"compaction failed, sending full context: {exc}", stacklevel=2)
             return messages
 
     def set_trajectory(self, *, enabled: bool, namespace: str, max_chars: int) -> None:
