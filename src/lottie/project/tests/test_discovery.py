@@ -139,3 +139,52 @@ def test_load_system_prompt_broken_propagates(
     )
     with pytest.raises(typer.BadParameter):
         load_system_prompt(demo, "researcher")
+
+
+# --- E5: resolve_provider honours the project fallback -----------------------
+
+
+def test_resolve_provider_honours_the_configured_fallback(tmp_path: Path) -> None:
+    from lottie.llm.routing import RoutedProvider
+    from lottie.project.discovery import resolve_provider
+
+    (tmp_path / "lottie.yaml").write_text(
+        "project: p\nproviders:\n  default: a/primary\n  fallback: b/secondary\n"
+    )
+    routed = resolve_provider(tmp_path, "a/primary")
+    assert isinstance(routed, RoutedProvider)
+    assert routed.chain == ["a/primary", "b/secondary"]
+
+
+def test_resolve_provider_without_a_fallback_is_not_wrapped(tmp_path: Path) -> None:
+    from lottie.llm.routing import RoutedProvider
+    from lottie.project.discovery import resolve_provider
+
+    (tmp_path / "lottie.yaml").write_text("project: p\nproviders:\n  default: a/primary\n")
+    assert not isinstance(resolve_provider(tmp_path, "a/primary"), RoutedProvider)
+
+
+def test_a_broken_lottie_yaml_degrades_to_no_fallback(tmp_path: Path) -> None:
+    """Losing the fallback is worse-but-working; refusing to build a provider is a dead run.
+
+    A caller that reached here already has a project, so a malformed lottie.yaml is
+    `lottie status`'s problem to report — not a reason to make the run impossible.
+    """
+    from lottie.llm.routing import RoutedProvider
+    from lottie.project.discovery import resolve_provider
+
+    (tmp_path / "lottie.yaml").write_text("{{{ not yaml at all")
+    provider = resolve_provider(tmp_path, "a/primary")
+    assert provider.model == "a/primary"
+    assert not isinstance(provider, RoutedProvider)
+
+
+def test_the_default_notifier_warns_so_a_fallback_is_never_silent() -> None:
+    """A silent fallback is the dangerous kind — the run succeeds on a different model
+    at a different price and nothing says so."""
+    import pytest
+
+    from lottie.project.discovery import _warn_fallback
+
+    with pytest.warns(UserWarning, match="falling back"):
+        _warn_fallback("a/primary", "b/secondary", RuntimeError("429"))

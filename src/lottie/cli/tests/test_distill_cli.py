@@ -71,8 +71,8 @@ def _seed(root: Path, count: int, *, success: bool = True) -> None:
 @pytest.fixture(autouse=True)
 def _mock_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "lottie.cli.distill.build_provider",
-        lambda model: MockLLMProvider(responses=[GOOD_REPLY]),
+        "lottie.cli.distill.resolve_provider",
+        lambda root, model, **kw: MockLLMProvider(responses=[GOOD_REPLY]),
     )
 
 
@@ -131,8 +131,8 @@ class TestDistillFailures:
     ) -> None:
         _seed(project, 1)
         monkeypatch.setattr(
-            "lottie.cli.distill.build_provider",
-            lambda model: MockLLMProvider(responses=["sorry, cannot help"]),
+            "lottie.cli.distill.resolve_provider",
+            lambda root, model, **kw: MockLLMProvider(responses=["sorry, cannot help"]),
         )
         result = runner.invoke(app, ["distill", "run", "digest"])
         assert result.exit_code != 0 and "distillation failed" in result.output
@@ -150,8 +150,8 @@ class TestDistillFailures:
             }
         )
         monkeypatch.setattr(
-            "lottie.cli.distill.build_provider",
-            lambda model: MockLLMProvider(responses=[poisoned]),
+            "lottie.cli.distill.resolve_provider",
+            lambda root, model, **kw: MockLLMProvider(responses=[poisoned]),
         )
         result = runner.invoke(app, ["distill", "run", "digest"])
         assert result.exit_code != 0 and "security gate" in result.output
