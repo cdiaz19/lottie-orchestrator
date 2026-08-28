@@ -7,13 +7,13 @@ from typing import Annotated
 import typer
 from pydantic import BaseModel, ValidationError
 
-from lottie.llm import build_provider
 from lottie.project.config import find_project_root, load_agent_config
 from lottie.project.discovery import (
     instantiate_agent,
     load_agent_class,
     load_input_model,
     required_fields,
+    resolve_provider,
 )
 from lottie.serve.errors import SecurityViolation
 from lottie.serve.security import SecurityGate
@@ -40,7 +40,7 @@ def run(
         raise typer.BadParameter(f"agent '{name}' not found")
 
     cfg = load_agent_config(unit_dir)
-    llm = build_provider(provider or cfg.provider)
+    llm = resolve_provider(root, provider or cfg.provider)
     input_model = load_input_model(root, name)
     data = _build_input(input_model, input_json, name)
 

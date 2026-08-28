@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib
 import sys
 import warnings
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 from typing import Literal
@@ -21,9 +22,9 @@ from lottie.core import BaseAgent, SecurityGateProtocol
 from lottie.governance.capability import build_capability_gate
 from lottie.governance.cost import build_cost_gate
 from lottie.governance.policy import build_policy_gate
-from lottie.llm import LLMProvider
+from lottie.llm import LLMProvider, build_provider
 from lottie.memory.store import build_memory_client
-from lottie.project.config import AgentConfig, load_agent_config
+from lottie.project.config import AgentConfig, load_agent_config, load_lottie_config
 
 
 class UnitInfo(BaseModel):
@@ -298,3 +299,38 @@ def required_fields(model: type[BaseModel]) -> list[str]:
         for field_name, field in model.model_fields.items()
         if field.is_required()
     ]
+
+
+def resolve_provider(
+    root: Path, model: str, *, on_fallback: Callable[[str, str, BaseException], None] | None = None
+) -> LLMProvider:
+    """Build a provider for `model`, honouring the project's configured fallback (E5).
+
+    `lottie.yaml` has declared `providers.fallback` since Phase 0 and nothing read it.
+    This is the single place that changes, so every call site gets the behaviour its
+    config already promised.
+
+    A missing or unreadable `lottie.yaml` degrades to a plain provider rather than
+    failing: a caller that got this far already has a project, and losing the fallback is
+    a worse-but-working outcome where refusing to build a provider is a dead run.
+    """
+    fallback: str | None = None
+    try:
+        fallback = load_lottie_config(root).providers.fallback
+    except Exception:  # noqa: BLE001 - a broken lottie.yaml is `lottie status`'s report
+        fallback = None
+    return build_provider(model, fallback=fallback, on_fallback=on_fallback or _warn_fallback)
+
+
+def _warn_fallback(failed: str, nxt: str, exc: BaseException) -> None:
+    """Default notifier: a fallback must never be silent.
+
+    A silent fallback is the dangerous kind — the run succeeds on a different model at a
+    different price and nothing says so. The audit ledger also records the model that
+    actually served (RoutedProvider.model reports the active one), so a fallback leaves
+    two traces: this warning at the moment it happens, and the record afterwards.
+    """
+    warnings.warn(
+        f"provider {failed!r} failed transiently; falling back to {nxt!r}: {exc}",
+        stacklevel=2,
+    )

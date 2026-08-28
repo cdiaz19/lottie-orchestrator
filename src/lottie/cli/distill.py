@@ -34,11 +34,11 @@ from lottie.distill.store import (
     reject,
     write_draft,
 )
-from lottie.llm import build_provider
 from lottie.memory.reflection import RunTrajectory
 from lottie.memory.schema import MemoryQuery, MemoryTier
 from lottie.memory.store import build_memory_client
 from lottie.project.config import AgentConfig, find_project_root, load_agent_config
+from lottie.project.discovery import resolve_provider
 
 distill_app = typer.Typer(help="Distil an agent's successful runs into reusable skills.")
 
@@ -101,7 +101,7 @@ def distill(
     prior = existing_version(root, target_name)
     version = bump_minor(prior) if prior else "0.1.0"
 
-    llm = build_provider(provider or cfg.provider)
+    llm = resolve_provider(root, provider or cfg.provider)
     response = llm.complete(build_distill_prompt(name, trajectories))
     try:
         skill = parse_distilled(response.content, name=target_name, version=version)

@@ -31,11 +31,11 @@ def test_reflect_runs_consolidation(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     from lottie.llm import MockLLMProvider
 
     monkeypatch.chdir(_project(tmp_path))
-    # build_provider always returns a LiteLLMProvider (real network) — patch it in the
+    # resolve_provider builds a real LiteLLMProvider (real network) — patch it in the
     # reflect module's namespace so the consolidation LLM call is a deterministic mock.
     monkeypatch.setattr(
-        "lottie.cli.reflect.build_provider",
-        lambda _model: MockLLMProvider(["lesson a\nlesson b"]),
+        "lottie.cli.reflect.resolve_provider",
+        lambda root, model, **kw: MockLLMProvider(["lesson a\nlesson b"]),
     )
     result = runner.invoke(app, ["reflect", "digest", "--namespace", "ns"])
     assert result.exit_code == 0

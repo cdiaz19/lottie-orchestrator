@@ -11,11 +11,11 @@ from typing import Annotated
 
 import typer
 
-from lottie.llm import build_provider
 from lottie.memory.agent import MemoryAgent  # NOT re-exported from lottie.memory (import cycle)
 from lottie.memory.schema import ReflectionInput
 from lottie.memory.store import build_memory_client
 from lottie.project.config import find_project_root, load_agent_config
+from lottie.project.discovery import resolve_provider
 
 
 def reflect(
@@ -37,7 +37,7 @@ def reflect(
         raise typer.BadParameter(f"agent '{name}' not found")
 
     cfg = load_agent_config(unit_dir)
-    llm = build_provider(provider or cfg.provider)
+    llm = resolve_provider(root, provider or cfg.provider)
     memory = build_memory_client(root, backend=cfg.memory.backend, path=cfg.memory.path)
     ns = namespace or cfg.memory.namespace or name
 

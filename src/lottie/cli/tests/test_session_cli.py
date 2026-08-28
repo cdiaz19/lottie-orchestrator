@@ -55,7 +55,8 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (agent_dir / "config.yaml").write_text(yaml.safe_dump({"provider": "mock/sim"}))
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
-        "lottie.cli.run.build_provider", lambda model: MockLLMProvider(responses=["ok"] * 10)
+        "lottie.cli.run.resolve_provider",
+        lambda root, model, **kw: MockLLMProvider(responses=["ok"] * 10),
     )
     return tmp_path
 

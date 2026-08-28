@@ -96,6 +96,27 @@ is always a human decision: `lottie distill review --approve` re-screens the dra
 to `skills/distilled/<name>/`, and records who approved it under which capability. An agent
 must declare both `distilled` and that capability to invoke it.
 
+### Provider fallback
+
+```yaml
+# lottie.yaml
+providers:
+  default: anthropic/claude-sonnet-4-6
+  fallback: openai/gpt-4o
+```
+
+When the primary provider fails **transiently** — rate limit, timeout, 5xx, connection
+error — the run continues on the fallback. The audit record names the model that
+*actually served* it, and a warning fires at the moment it happens, so a fallback is never
+silent.
+
+It deliberately does **not** fall back on a content-policy refusal. Shopping a refused
+request to a second model would launder a provider's safety decision through a framework
+that advertises fail-closed gates. Bad requests and auth errors also fail fast: they fail
+identically on the fallback, so retrying only doubles the spend.
+
+With no `fallback` configured, nothing is wrapped and nothing changes.
+
 ### Inspect what wraps a run
 
 Every agent run is wrapped by an ordered chain of runtime modules — security gates, policy,
