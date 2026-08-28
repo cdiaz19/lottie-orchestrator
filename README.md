@@ -6,7 +6,7 @@ Provider-agnostic multi-agent AI orchestration framework with shared knowledge a
 
 > Works with Claude Code, Cursor, Codex, and any LLM. Swap Claude for GPT-4o with a single config change — no code changes, ever.
 
-**Status:** **`v3.0.0` — "a runtime, not a base class."** V3 extracts an execution kernel so cross-cutting concerns are **registered modules** rather than hand-sequenced steps. `BaseAgent.run` — twelve inline steps — is now one line over an ordered chain, and `run_stream` shares the same modules, so there is a single execution path. Two primitives, matching two semantics: **abort-capable middleware** for fail-closed gates, and a **fail-open event stream** for observers, where a subscriber that raises can neither fail a run nor starve the next one. Security, policy, cost, capability, recall, trajectory and session now live in their **owning subsystems**, each constructed from its gate rather than from the agent. Events carry hashes only, and the digest shape is verified rather than trusted. `lottie modules` finally makes the chain visible, and `lottie doctor` warns when a fail-closed module is switched off. Earlier: `v2.0.0` self-learning (persistent memory, a fail-closed write gateway, recall-as-data, skill distillation to prompt templates, resumable sessions), `v1.0.0` hardening, Phase-4 HTTP transports, governance (audit/policy/cost/OTel) and the agent mesh.
+**Status:** **`v3.2.0` — "the config stops lying."** `providers.fallback` had been declared in `lottie.yaml` since Phase 0 and never read; it is honoured now. A fallback advances on **transient** failures only and **never on a content-policy refusal** — shopping a refused request to a second model would launder a provider's safety decision through a framework that advertises fail-closed gates. Streaming falls back only before the first delta, so two models' answers are never spliced into one response. Also closes v3.1.0's scope limits: knowledge is a **droppable context source**, so an over-budget prompt gives up retrieved material before it touches the task, and the Context Compiler absorbed compaction to become the single shrink authority. Earlier: `v3.1.0` context compiler, `v3.0.0` runtime kernel (abort-capable middleware + fail-open event stream, one execution path for `run`/`run_stream`, `lottie modules`), `v2.0.0` self-learning, `v1.0.0` hardening, Phase-4 HTTP transports, governance and the agent mesh.
 
 ---
 
@@ -267,7 +267,8 @@ lottie serve --port 8000
 | `v2.0.0` | V2 — Self-learning & harness | persistent memory + fail-closed write gateway, recall-as-data, reflexive write-back, episodic trajectories, skill distillation to prompt templates (never codegen) with human promotion, learning-delta benchmark, context compaction, resumable sessions | ✅ |
 | `v3.0.0` | V3 — Runtime kernel | execution kernel (abort-capable middleware chain + fail-open event stream), one execution path for `run`/`run_stream`, modules owned by their subsystems, auditing as a subscriber, `lottie modules` + config-driven module control | ✅ |
 | `v3.1.0` | E4 — Context Compiler | ordered, budgeted, provenance-carrying message assembly; pinning by source; reflection as a module | ✅ |
-| _next_ | V3.2+ | Provider Router (3.2), Execution Planner (3.3), Plugin SDK (3.4) | ◻ |
+| `v3.2.0` | E5 — Provider Router | `providers.fallback` honoured; transient-only fallback that never launders a policy refusal; knowledge as a droppable context source | ✅ |
+| _next_ | V3.3+ | Execution Planner (3.3), Plugin SDK (3.4) | ◻ |
 
 It's verified in the open — see the [lottie-lab](https://github.com/cdiaz19/lottie-lab) round-by-round test harness.
 
