@@ -117,7 +117,11 @@ class RoutedProvider(LLMProvider):
                 continue
             self._active = provider
             return response
-        raise last if last is not None else RuntimeError("no provider produced a response")
+        # Unreachable by construction: the chain is non-empty (constructor guards it) and
+        # every iteration either returns or re-raises on the last index.
+        raise last if last is not None else RuntimeError(  # pragma: no cover
+            "no provider produced a response"
+        )
 
     def stream_complete(
         self,
@@ -154,4 +158,5 @@ class RoutedProvider(LLMProvider):
                 continue
             self._active = provider
             return result
-        raise RuntimeError("no provider produced a stream")
+        # Unreachable by construction — see `complete`.
+        raise RuntimeError("no provider produced a stream")  # pragma: no cover
