@@ -96,6 +96,25 @@ is always a human decision: `lottie distill review --approve` re-screens the dra
 to `skills/distilled/<name>/`, and records who approved it under which capability. An agent
 must declare both `distilled` and that capability to invoke it.
 
+### Replay a mesh run
+
+A mesh routes **dynamically** — the supervisor decides each step from what already
+happened — which makes a multi-agent flow non-deterministic and awkward to test or debug.
+Every completed run now records the decisions it actually made:
+
+```bash
+lottie plan list assistant           # runs with a recorded plan
+lottie plan show assistant <thread>  # the routing decisions, step by step
+```
+
+A recorded plan can be replayed with **zero supervisor calls**, which turns a
+non-deterministic flow into a repeatable one: regression tests over multi-agent behaviour,
+and debugging a failure without paying for routing again.
+
+The plan stores a **hash** of the task, never its text — the same discipline that keeps
+raw content out of the audit ledger. Replaying against a mesh that no longer declares a
+recorded worker fails loudly rather than silently skipping it.
+
 ### Provider fallback
 
 ```yaml

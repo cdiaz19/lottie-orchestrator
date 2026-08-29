@@ -18,6 +18,7 @@ from lottie.cli.knowledge import knowledge_app
 from lottie.cli.memory import memory_app
 from lottie.cli.mesh import mesh_app
 from lottie.cli.modules import modules
+from lottie.cli.plan import plan_app
 from lottie.cli.reflect import reflect
 from lottie.cli.registry import inspect_app, list_app
 from lottie.cli.run import run
@@ -48,6 +49,7 @@ app.add_typer(list_app, name="list")
 app.add_typer(memory_app, name="memory")
 app.add_typer(mesh_app, name="mesh")
 app.command("modules")(modules)
+app.add_typer(plan_app, name="plan")
 app.add_typer(inspect_app, name="inspect")
 app.command("reflect")(reflect)
 app.command("run")(run)

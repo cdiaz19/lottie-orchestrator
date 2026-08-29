@@ -277,6 +277,10 @@ def instantiate_agent(
             max_context_tokens=config.harness.compaction.max_context_tokens,
             keep_recent=config.harness.compaction.keep_recent,
         )
+    # E6: a mesh records the routing decisions it made, so a run can be replayed
+    # without the supervisor. Only meshes have a plan; a plain agent has nothing to record.
+    if hasattr(agent, "set_plans_root"):
+        agent.set_plans_root(root)
     # V3 S6: the `modules:` block switches mounted modules off. A disabled module is
     # never constructed, so it costs nothing at run time.
     disabled = frozenset(
