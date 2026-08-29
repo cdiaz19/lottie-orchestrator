@@ -4,6 +4,69 @@ All notable changes to Lottie Orchestrator. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions are
 [semver](https://semver.org/).
 
+## [3.2.0] — 2026-08-11
+
+**"The config stops lying."** E5 makes `providers.fallback` mean something, and closes
+the two scope limits `v3.1.0` shipped with.
+
+### Fixed
+
+- **`providers.fallback` was declared but never read.** `lottie.yaml` has carried it
+  since Phase 0; nothing consumed it. A user who set one got nothing — worse than an
+  absent feature, because the config claimed a resilience property the runtime lacked and
+  the failure mode was discovering that during an outage. `resolve_provider` now honours
+  it at every call site.
+
+### Added — provider routing
+
+- **`RoutedProvider`** advances through a provider chain on **transient** failures only:
+  rate limit, timeout, 5xx, connection error.
+- **A content-policy refusal is never retried elsewhere.** Shopping a refused request to a
+  second model would launder a provider's safety decision through a framework that
+  advertises fail-closed gates. That is the one retry this codebase must never make.
+- **Bad requests and auth errors fail fast** — they fail identically on the fallback, so
+  retrying only doubles the spend.
+- **`is_transient` defaults to False** for unrecognised exceptions, so a new error type
+  from a provider SDK cannot silently widen the fallback surface. Classification is by
+  exception *name*, so the module never imports litellm (rule 1).
+- **Streaming falls back only before the first delta.** Once bytes have shipped, switching
+  providers would splice two models' answers into one response — silently corrupt, worse
+  than a clean failure.
+- A fallback leaves **two traces**: a warning when it happens, and the audit record
+  afterwards, since `RoutedProvider.model` reports whoever actually served.
+
+### Added — context (closing v3.1.0's scope limits)
+
+- **Knowledge is a droppable source.** `complete()` gained an optional `context:`
+  parameter so an agent can declare retrieved material *separately from its task*.
+  `ResearchAgent` previously concatenated chunks into the user message, which made
+  knowledge inseparable from the query — the compiler had nothing it was allowed to give
+  up, and an over-budget prompt could only be compacted by position. Over budget now, the
+  query survives and the knowledge is dropped or summarised.
+- **E4 absorbed compaction.** `memory/compaction.py` moved to `context/` — it imports only
+  `llm.Message` and had no memory dependencies, having lived under `memory/` since V2 S5a
+  framed it as part of the harness. The compiler is now the single shrink authority
+  instead of two mechanisms running back to back.
+
+### Changed
+
+- Pinning is decided at two levels, deliberately: which **sources** survive the budget,
+  then which **messages** within a surviving source. Source-pinning cannot discriminate
+  once every remaining source is pinned; there, role is the right signal.
+
+### Known deviation from the E5 design
+
+The design doc said a fallback would emit `fallback_triggered` on the runtime event bus.
+**It does not.** The provider is constructed before the agent that owns the bus, so wiring
+it there needs the module orchestrator to own provider construction — a larger change than
+this epic. The warning plus the audit record give real observability without contorting
+the wiring; the bus event can come with E7 if it earns its place.
+
+### Backward compatibility
+
+`build_provider(model)` and `complete(messages)` keep their signatures. A project with no
+`fallback` configured is not wrapped at all and behaves identically to 3.1.0.
+
 ## [3.1.0] — 2026-08-10
 
 **"Assembly gets an authority."** E4 gives message assembly an ordering authority, a
