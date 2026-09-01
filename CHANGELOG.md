@@ -4,6 +4,70 @@ All notable changes to Lottie Orchestrator. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions are
 [semver](https://semver.org/).
 
+## [3.3.0] — 2026-09-01
+
+**"A mesh run you can repeat."** E6 makes multi-agent flows reproducible: every completed
+run records the routing decisions it made, and a recorded plan replays with **zero
+supervisor calls**.
+
+### The epic was re-scoped after its architecture review
+
+The V3 spec described E6 as *"a typed `Plan` DAG that both single-agent and mesh compile
+to."* The code says otherwise. `LocalEngine.run` calls `route(state)` on **every step**,
+and the supervisor builds its prompt from `state.history` — decision N+1 depends on
+result N. **A mesh cannot be compiled to a DAG ahead of time**, and that is not a gap to
+close: the dynamism *is* the feature. If the flow were known in advance you would not pay
+an LLM to route it.
+
+That invalidated two of the three promised unlocks — a single-agent dry-run is one node,
+and a pre-execution cost estimate needs the path, which needs the supervisor. Only
+**deterministic replay** survived, and it needs a *recorded* plan rather than a predicted
+one. The V3 spec predicted this outcome: *"the most likely to be re-scoped or split after
+its own review."*
+
+### Added
+
+- **`Plan` and `PlanRecorder`** — a completed mesh run records its routing decisions.
+- **`replay_route`** — re-executes a recorded sequence as an ordinary `RouteFn`, making
+  **zero supervisor calls**. **No engine changed**: `MeshEngine.run` already took `route`
+  as a parameter, which is exactly the seam replay needed.
+- **`lottie plan list|show`** — what a run decided, step by step, with parallel fan-out
+  distinguished from sequential.
+
+### What replay buys
+
+- **Regression tests over multi-agent flows.** They are non-deterministic today, so a mesh
+  test either hand-mocks the router or cannot assert on the path at all.
+- **Debugging without paying for routing.** Re-run a failure at zero supervisor cost.
+- **A truthful "what happened" artifact** at the flow level, alongside the audit ledger's
+  per-run one.
+
+### Fixed during development
+
+The first implementation inferred the plan from `MeshState.history`, grouping by
+`StepResult.step`. It looked cheaper and was **wrong**: only `LangGraphEngine` populates
+`step` (it needs it for deterministic branch merge), so on `LocalEngine` every sequential
+step collapsed into one phantom fan-out. Recording at the routing seam is exact by
+construction and identical across engines.
+
+### Security
+
+- **Plans store a task hash, never the text.** A plan lives on disk; the same rule that
+  keeps raw content out of the audit ledger.
+- **Thread ids and agent names are validated before any path join.** They arrive from CLI
+  arguments, and `Path(base) / "../../etc"` silently escapes. Third time this guard has
+  earned its place — distill drafts, sessions, now plans.
+- **Divergence fails closed.** Replaying against a mesh that no longer declares a recorded
+  worker raises rather than skipping: a replay that quietly diverges looks like a
+  reproduction and is not.
+- **Only completed runs are recorded.** An interrupted run has not finished deciding, so
+  recording it would replay a partial flow as if it were whole.
+
+### Backward compatibility
+
+No engine, agent, or transport changed. Recording is off unless a project root is known
+(`instantiate_agent` supplies it), so a directly-constructed mesh leaves no artefacts.
+
 ## [3.2.0] — 2026-08-11
 
 **"The config stops lying."** E5 makes `providers.fallback` mean something, and closes

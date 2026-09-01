@@ -8,6 +8,7 @@ Provider-agnostic multi-agent AI orchestration framework with shared knowledge a
 
 <img width="1456" height="720" alt="Gemini_Generated_Image_sopbzlsopbzlsopb" src="https://github.com/user-attachments/assets/26445481-94e2-42fe-b185-79f68c39a398" />
 
+**`v3.3.0`** — recorded mesh plans and deterministic replay. Full history in [`CHANGELOG.md`](CHANGELOG.md).
 
 ---
 
@@ -288,7 +289,8 @@ lottie serve --port 8000
 | `v3.0.0` | V3 — Runtime kernel | execution kernel (abort-capable middleware chain + fail-open event stream), one execution path for `run`/`run_stream`, modules owned by their subsystems, auditing as a subscriber, `lottie modules` + config-driven module control | ✅ |
 | `v3.1.0` | E4 — Context Compiler | ordered, budgeted, provenance-carrying message assembly; pinning by source; reflection as a module | ✅ |
 | `v3.2.0` | E5 — Provider Router | `providers.fallback` honoured; transient-only fallback that never launders a policy refusal; knowledge as a droppable context source | ✅ |
-| _next_ | V3.3+ | Execution Planner (3.3), Plugin SDK (3.4) | ◻ |
+| `v3.3.0` | E6 — Execution Planner | recorded plans + deterministic replay (zero supervisor calls); `lottie plan` | ✅ |
+| _next_ | V3.4 | Plugin SDK — public extension API, opt-in loading by explicit name | ◻ |
 
 It's verified in the open — see the [lottie-lab](https://github.com/cdiaz19/lottie-lab) round-by-round test harness.
 
