@@ -6,7 +6,8 @@ Provider-agnostic multi-agent AI orchestration framework with shared knowledge a
 
 > Works with Claude Code, Cursor, Codex, and any LLM. Swap Claude for GPT-4o with a single config change — no code changes, ever.
 
-**Status:** **`v3.2.0` — "the config stops lying."** `providers.fallback` had been declared in `lottie.yaml` since Phase 0 and never read; it is honoured now. A fallback advances on **transient** failures only and **never on a content-policy refusal** — shopping a refused request to a second model would launder a provider's safety decision through a framework that advertises fail-closed gates. Streaming falls back only before the first delta, so two models' answers are never spliced into one response. Also closes v3.1.0's scope limits: knowledge is a **droppable context source**, so an over-budget prompt gives up retrieved material before it touches the task, and the Context Compiler absorbed compaction to become the single shrink authority. Earlier: `v3.1.0` context compiler, `v3.0.0` runtime kernel (abort-capable middleware + fail-open event stream, one execution path for `run`/`run_stream`, `lottie modules`), `v2.0.0` self-learning, `v1.0.0` hardening, Phase-4 HTTP transports, governance and the agent mesh.
+<img width="1456" height="720" alt="Gemini_Generated_Image_sopbzlsopbzlsopb" src="https://github.com/user-attachments/assets/26445481-94e2-42fe-b185-79f68c39a398" />
+
 
 ---
 
