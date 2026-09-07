@@ -49,7 +49,7 @@ from lottie.memory.schema import (
     MemoryOrigin,
     MemoryTier,
 )
-from lottie.runtime.events import EventBus
+from lottie.runtime.events import EventBus, Subscriber
 from lottie.runtime.pipeline import Pipeline
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -125,6 +125,9 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         self._keep_recent: int = 6
         self._session: SessionState | None = None
         self._session_store: SessionStore | None = None
+        #: Third-party observers (E7). Loaded by instantiate_agent from `plugins:`;
+        #: empty means no plugin code exists in this process at all.
+        self._plugins: list[Subscriber] = []
 
     def set_policy(self, gate: PolicyGate) -> None:
         """Attach a policy gate (called by instantiate_agent for CLI/serve runs)."""
@@ -195,6 +198,15 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         merged = {**self._session.progress, **updates}
         self._session = self._session.model_copy(update={"progress": merged})
         self._session = self._session_store.save(self._session)
+
+    def set_plugins(self, plugins: list[Subscriber]) -> None:
+        """Mount third-party observers (E7, via instantiate_agent).
+
+        They subscribe AFTER the audit subscriber, so a plugin cannot delay or displace
+        the ledger write — and the bus isolates each dispatch anyway, so it could not
+        break one either.
+        """
+        self._plugins = list(plugins)
 
     def set_disabled_modules(self, names: frozenset[str]) -> None:
         """Drop named modules from the chain (via instantiate_agent, `modules:` block)."""
@@ -445,6 +457,8 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         # isolates every dispatch, which makes best-effort a property of the bus instead
         # of a try/except each observer has to remember.
         bus.subscribe(AuditSubscriber(self._audit))
+        for plugin in self._plugins:
+            bus.subscribe(plugin)
         return Pipeline(
             runnable=self.name,
             kind=self.kind,

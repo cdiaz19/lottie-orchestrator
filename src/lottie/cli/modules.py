@@ -15,7 +15,7 @@ from rich.table import Table
 
 from lottie.core.middleware import KNOWN_MODULES, build_chain
 from lottie.llm import MockLLMProvider
-from lottie.project.config import find_project_root, load_agent_config
+from lottie.project.config import AgentConfig, find_project_root, load_agent_config
 from lottie.project.discovery import discover_agents, instantiate_agent, load_agent_class
 
 
@@ -33,6 +33,13 @@ def modules(
     console = Console()
     for agent_name in names:
         cfg = load_agent_config(root / "agents" / agent_name)
+
+        # Config-derived facts print FIRST, before any attempt to instantiate. A broken
+        # plugin makes instantiation fail, and that is exactly when an operator most needs
+        # to see what is configured — a diagnostic that only works when things are fine is
+        # not a diagnostic.
+        _report_config(console, cfg)
+
         try:
             agent = instantiate_agent(
                 load_agent_class(root, agent_name),
@@ -61,9 +68,26 @@ def modules(
             table.add_row("—", module_name, "[yellow]disabled[/yellow]")
         console.print(table)
 
-        unknown = sorted(set(cfg.modules) - set(KNOWN_MODULES))
-        if unknown:
-            console.print(
-                f"[yellow]WARN[/yellow]  unknown module name(s) in config: "
-                f"{', '.join(unknown)} — this config line does nothing"
-            )
+
+
+
+def _report_config(console: Console, cfg: AgentConfig) -> None:
+    """Print what the config declares, independent of whether the agent can be built."""
+    if cfg.plugins:
+        # Third-party code in this process. An operator should never have to read source
+        # to find out what is loaded, or on what terms.
+        console.print(
+            f"  [yellow]plugins[/yellow] ({len(cfg.plugins)}): "
+            + ", ".join(p.module for p in cfg.plugins)
+        )
+        console.print(
+            "  [dim]plugins observe only — they cannot intercept a run, and events carry "
+            "hashes, never raw content. They are NOT sandboxed.[/dim]"
+        )
+
+    unknown = sorted(set(cfg.modules) - set(KNOWN_MODULES))
+    if unknown:
+        console.print(
+            f"[yellow]WARN[/yellow]  unknown module name(s) in config: "
+            f"{', '.join(unknown)} — this config line does nothing"
+        )

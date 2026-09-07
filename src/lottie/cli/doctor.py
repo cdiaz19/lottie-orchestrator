@@ -115,6 +115,12 @@ def _learning_warnings() -> list[str]:
                 f"agent '{name}': trajectories are being written but never consulted "
                 "(recall and reflect are both off) — the store will grow unused."
             )
+        if cfg.plugins:
+            warnings.append(
+                f"agent '{name}': {len(cfg.plugins)} third-party plugin(s) load in this "
+                "process and are NOT sandboxed. They observe only — they cannot intercept "
+                "a run — but they run with your privileges. Review them like dependencies."
+            )
         unknown = sorted(set(cfg.modules) - set(KNOWN_MODULES))
         if unknown:
             warnings.append(

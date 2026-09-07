@@ -224,3 +224,18 @@ def test_a_clean_modules_block_produces_no_warning(
     _project_with_agent(tmp_path, monkeypatch, {"modules": {"recall": {"enabled": True}}})
     out = runner.invoke(app, ["doctor"]).output
     assert "unknown module name" not in out and "DISABLED" not in out
+
+
+def test_warns_that_plugins_are_not_sandboxed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _project_with_agent(tmp_path, monkeypatch, {"plugins": [{"module": "mypkg.tel:Sub"}]})
+    out = runner.invoke(app, ["doctor"]).output
+    assert "NOT sandboxed" in out and "observe only" in out
+
+
+def test_no_plugins_means_no_plugin_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _project_with_agent(tmp_path, monkeypatch, {})
+    assert "sandboxed" not in runner.invoke(app, ["doctor"]).output

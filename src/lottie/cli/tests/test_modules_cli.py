@@ -172,3 +172,31 @@ class TestBrokenAgent:
         assert "cannot inspect" in result.output
         # …and the healthy agent is still reported.
         assert "11 module(s) mounted" in result.output
+
+
+class TestPluginListing:
+    def test_no_plugins_means_no_plugin_line(self, project: Path) -> None:
+        assert "plugins" not in runner.invoke(app, ["modules", "probe"]).output
+
+    def test_configured_plugins_are_listed(self, project: Path) -> None:
+        _set_config(project, {"plugins": [{"module": "mypkg.tel:Sub"}]})
+        out = runner.invoke(app, ["modules", "probe"]).output
+        assert "mypkg.tel:Sub" in out
+
+    def test_the_trust_boundary_is_stated(self, project: Path) -> None:
+        # An operator should never have to read source to learn what third-party code is
+        # in their process, or on what terms.
+        _set_config(project, {"plugins": [{"module": "mypkg.tel:Sub"}]})
+        out = runner.invoke(app, ["modules", "probe"]).output
+        assert "observe only" in out and "NOT sandboxed" in out
+
+    def test_a_broken_plugin_still_shows_what_is_configured(self, project: Path) -> None:
+        """A diagnostic that only works when things are fine is not a diagnostic.
+
+        A plugin that fails to import makes `instantiate_agent` raise — which is exactly
+        when an operator most needs to see what the config declares.
+        """
+        _set_config(project, {"plugins": [{"module": "not_installed.tel:Sub"}]})
+        out = runner.invoke(app, ["modules", "probe"]).output
+        assert "not_installed.tel:Sub" in out
+        assert "cannot inspect" in out  # …and the failure is still reported

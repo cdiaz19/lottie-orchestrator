@@ -24,6 +24,7 @@ from lottie.governance.cost import build_cost_gate
 from lottie.governance.policy import build_policy_gate
 from lottie.llm import LLMProvider, build_provider
 from lottie.memory.store import build_memory_client
+from lottie.plugins.loader import load_plugins
 from lottie.project.config import AgentConfig, load_agent_config, load_lottie_config
 
 
@@ -277,6 +278,11 @@ def instantiate_agent(
             max_context_tokens=config.harness.compaction.max_context_tokens,
             keep_recent=config.harness.compaction.keep_recent,
         )
+    # E7: third-party observers, named explicitly. A load failure raises here rather
+    # than being skipped — a plugin that silently fails to load would leave an operator
+    # believing their exporter is running.
+    if config.plugins:
+        agent.set_plugins(load_plugins([p.module for p in config.plugins]))
     # E6: a mesh records the routing decisions it made, so a run can be replayed
     # without the supervisor. Only meshes have a plan; a plain agent has nothing to record.
     if hasattr(agent, "set_plans_root"):

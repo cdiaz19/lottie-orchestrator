@@ -98,6 +98,39 @@ is always a human decision: `lottie distill review --approve` re-screens the dra
 to `skills/distilled/<name>/`, and records who approved it under which capability. An agent
 must declare both `distilled` and that capability to invoke it.
 
+### Plugins
+
+A plugin **observes** a run. Name it by explicit import path — there is no discovery, so
+nothing loads that you did not name:
+
+```yaml
+plugins:
+  - module: "mypkg.telemetry:DatadogSubscriber"
+```
+
+```python
+from lottie.plugins import RunCompleted, RunEvent
+
+class DatadogSubscriber:
+    name = "datadog"
+
+    def on_event(self, event: RunEvent) -> None:
+        if isinstance(event, RunCompleted):
+            statsd.timing("lottie.run", event.latency_ms)
+```
+
+**A plugin cannot intercept a run and cannot read your content.** Events carry scalars and
+hashes only — never a task, prompt, or output — and the bus isolates every dispatch, so a
+plugin that raises can neither fail a run nor starve the next one. Middleware plugins are
+deliberately unsupported: middleware can abort a run and sees raw content, which is not a
+position to hand to code that is **not sandboxed**.
+
+That last point is the honest one: a plugin runs in-process with your privileges. Review
+plugins like dependencies. `lottie modules` and `lottie doctor` both list what is loaded.
+
+A load failure is fatal at startup rather than skipped — a plugin that silently failed to
+load would leave you believing your exporter was running.
+
 ### Replay a mesh run
 
 A mesh routes **dynamically** — the supervisor decides each step from what already
