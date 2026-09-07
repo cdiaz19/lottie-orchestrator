@@ -16,7 +16,7 @@ Two rules, both structural rather than conventional:
 from __future__ import annotations
 
 import warnings
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
 
@@ -77,8 +77,12 @@ class RunBlocked(RunEvent):
     error: str
 
 
+@runtime_checkable
 class Subscriber(Protocol):
-    """A fail-open observer. Raising is tolerated and warned, never propagated."""
+    """A fail-open observer. Raising is tolerated and warned, never propagated.
+
+    `runtime_checkable` so the plugin loader (E7) can reject a non-subscriber at LOAD
+    time by shape, rather than discovering it at the first event."""
 
     name: str
 

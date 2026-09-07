@@ -100,6 +100,17 @@ class ModuleConfig(BaseModel):
     enabled: bool = True
 
 
+class PluginConfig(BaseModel):
+    """One third-party subscriber, named by explicit import path (E7).
+
+    `module` is `package.path:AttributeName`. There is no discovery: nothing loads that
+    this list does not name. A plugin may observe (Subscriber) but never intercept
+    (Middleware) — see `lottie.plugins.loader` for why that bound is structural.
+    """
+
+    module: str
+
+
 class AgentConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -118,6 +129,10 @@ class AgentConfig(BaseModel):
     #: name -> {enabled}. Unknown names are rejected by `lottie doctor`, since a typo
     #: here would silently leave a security gate mounted.
     modules: dict[str, ModuleConfig] = {}
+    #: Third-party observers, in dispatch order. Loaded ONLY when named here; a load
+    #: failure is fatal rather than skipped, so a broken exporter cannot masquerade
+    #: as a working one.
+    plugins: list[PluginConfig] = []
     chat: ChatConfig | None = None  # None = agent not exposed on /v1/chat/completions
 
 
