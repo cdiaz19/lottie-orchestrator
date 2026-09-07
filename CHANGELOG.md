@@ -4,6 +4,80 @@ All notable changes to Lottie Orchestrator. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions are
 [semver](https://semver.org/).
 
+## [3.4.0] — 2026-09-07
+
+**"Observe, don't intercept."** E7 opens Lottie to third-party code — and draws the line
+on how much of the system that code is handed. **Completes the V3 roadmap.**
+
+### Added
+
+- **`lottie.plugins`** — the public, frozen extension surface. A plugin implements `name`
+  and `on_event`, and is named in `config.yaml` by explicit import path:
+
+  ```yaml
+  plugins:
+    - module: "mypkg.telemetry:DatadogSubscriber"
+  ```
+- **`lottie modules` and `lottie doctor` list loaded plugins** and state the trust
+  boundary in words. An operator should never read source to learn what third-party code
+  is in their process.
+
+### The two decisions that freeze the API
+
+**A plugin may be a Subscriber, not a Middleware.** The event bus already guarantees a
+raising subscriber can neither fail a run nor starve the next, and events carry scalars
+and hashes only — so the blast radius is bounded **by construction, not by trust**.
+Middleware can abort a run and sees raw input and output; that is not a position to hand
+to unsandboxed third-party code. Widening a frozen API later is far cheaper than narrowing
+one.
+
+**Named by explicit import path, not entry points.** There is no discovery step and no
+enumeration of installed packages; a typo simply fails to import. Entry-point names live
+in a global namespace shared by every installed distribution — two packages can claim one
+name, and a typo can resolve to a *different* package that advertises it. Opt-in does not
+fix squatting; not having a namespace does.
+
+### Security
+
+- **Plugins are not sandboxed.** They run in-process with the host's privileges. This is
+  stated in the README, the module docstring, `lottie modules`, and `lottie doctor` rather
+  than left for a reader to discover. Review plugins like dependencies.
+- **The guarantee is the mounting, not the type check.** `isinstance(x, Subscriber)` at
+  load is a friendly early error — `runtime_checkable` only verifies method presence. The
+  structural bound is that a plugin only ever reaches `bus.subscribe` and **never enters
+  `build_chain`**, so even a class shaped like middleware cannot intercept.
+- **No auto-discovery.** Nothing loads that the config did not name.
+- **A load failure is fatal at startup**, never skipped — a plugin that silently failed to
+  load would leave an operator believing their exporter is running.
+
+### Fixed
+
+Loading plugins inside `instantiate_agent` meant a broken plugin also broke
+`lottie modules` — the command you reach for *precisely when* a plugin is broken.
+Config-derived facts now print before any instantiation attempt, so the plugin list
+survives the failure and the failure is still reported.
+
+### The V3 roadmap is complete
+
+| Epic | Shipped |
+|---|---|
+| E1–E3, E8 — runtime kernel, migration, module orchestrator | `v3.0.0` |
+| E4 — Context Compiler | `v3.1.0` |
+| E5 — Provider Router | `v3.2.0` |
+| E6 — Execution Planner | `v3.3.0` |
+| E7 — Plugin SDK | `v3.4.0` |
+
+Two epics were re-scoped after their architecture reviews, and both are recorded rather
+than quietly narrowed: **E6** (a mesh routes dynamically, so it cannot be compiled to a
+DAG ahead of time — only deterministic replay survived) and **E4/V3's import metric**
+(`base_agent` reaches 3 of the subsystem edges V3 set out to reverse, not 1; the rest are
+the `self.llm`/`self.memory` DI fields, which are inherent to what an agent is).
+
+### Backward compatibility
+
+No agent, skill, engine, or transport changed. A project with no `plugins:` block runs no
+plugin code at all.
+
 ## [3.3.0] — 2026-09-01
 
 **"A mesh run you can repeat."** E6 makes multi-agent flows reproducible: every completed
