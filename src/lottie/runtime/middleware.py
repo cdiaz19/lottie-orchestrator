@@ -21,6 +21,16 @@ from pydantic import BaseModel
 
 from lottie.runtime.context import ExecutionContext
 
+
+class ModuleConflictError(RuntimeError):
+    """Two modules claim the same chain position.
+
+    Raised at composition rather than at run time so the failure surfaces at startup,
+    where an operator sees it — and so a plugin can never silently displace a security
+    middleware by claiming its `Order` slot.
+    """
+
+
 type Next = Callable[[ExecutionContext], BaseModel]
 """Continuation into the rest of the chain.
 
@@ -34,9 +44,9 @@ Typed as `BaseModel` rather than `Any`: every runnable output is a pydantic mode
 class Middleware(Protocol):
     """One lifecycle hook. Lower `order` runs earlier in the pre-phase.
 
-    Structural — a middleware never inherits from this. `runtime_checkable` so the
-    registry can tell a middleware from a subscriber: the discriminator is `order`,
-    which a subscriber does not have.
+    Structural — a middleware never inherits from this. `runtime_checkable` so a
+    middleware can be told from a subscriber: the discriminator is `order`, which a
+    subscriber does not have.
     """
 
     name: str
@@ -117,7 +127,7 @@ class Order:
     2. `depth reset` moves before `audit` — `CostGate.settle` never reads the depth, and
        `_write_audit` receives `is_root` as a captured parameter rather than re-reading it.
 
-    Third-party modules (E7) pick values between these; the registry rejects collisions
+    Third-party modules (E7) pick values between these; composition rejects collisions
     at registration.
     """
 

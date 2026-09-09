@@ -25,8 +25,7 @@ from lottie.governance.middleware import (
     PolicyMiddleware,
 )
 from lottie.runtime.context import ExecutionContext
-from lottie.runtime.middleware import Middleware, Next, Order
-from lottie.runtime.registry import ModuleConflictError
+from lottie.runtime.middleware import Middleware, ModuleConflictError, Next, Order
 from lottie.security.middleware import (
     SecurityInputMiddleware,
     SecurityOutputMiddleware,
@@ -107,8 +106,7 @@ def build_chain(
     `runtime.middleware.Order`.
 
     `disabled` drops modules by name (V3 S6, the `modules:` config block). A dropped
-    module is never constructed, so it costs nothing at run time — the same "return None
-    from the factory" semantics the registry uses.
+    module is never constructed, so it costs nothing at run time.
     """
     modules: list[Middleware] = [
         SecurityInputMiddleware(agent._security),
