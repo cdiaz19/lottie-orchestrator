@@ -128,6 +128,10 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         #: Third-party observers (E7). Loaded by instantiate_agent from `plugins:`;
         #: empty means no plugin code exists in this process at all.
         self._plugins: list[Subscriber] = []
+        #: One bus per AGENT rather than per run. The subscriber set is identical on
+        #: every run, so this is behaviourally the same — but it gives the provider
+        #: something stable to emit onto, which a per-run bus could not (E5).
+        self._bus: EventBus | None = None
 
     def set_policy(self, gate: PolicyGate) -> None:
         """Attach a policy gate (called by instantiate_agent for CLI/serve runs)."""
@@ -198,6 +202,24 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         merged = {**self._session.progress, **updates}
         self._session = self._session.model_copy(update={"progress": merged})
         self._session = self._session_store.save(self._session)
+
+    def event_bus(self) -> EventBus:
+        """The agent's event bus, built once and reused.
+
+        Audit is an OBSERVER, so it subscribes rather than mounting: `EventBus.emit`
+        isolates every dispatch, which makes best-effort a property of the bus instead of
+        a try/except each observer has to remember. Plugins subscribe after it, so they
+        can neither delay nor displace the ledger write.
+        """
+        from lottie.governance.subscribers import AuditSubscriber
+
+        if self._bus is None:
+            bus = EventBus()
+            bus.subscribe(AuditSubscriber(self._audit))
+            for plugin in self._plugins:
+                bus.subscribe(plugin)
+            self._bus = bus
+        return self._bus
 
     def set_plugins(self, plugins: list[Subscriber]) -> None:
         """Mount third-party observers (E7, via instantiate_agent).
@@ -450,15 +472,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         Everything wrapped around it is a mounted module (V3 S2).
         """
         from lottie.core.middleware import build_chain
-        from lottie.governance.subscribers import AuditSubscriber
-
-        bus = EventBus()
-        # Audit is an OBSERVER, so it subscribes rather than mounting: `EventBus.emit`
-        # isolates every dispatch, which makes best-effort a property of the bus instead
-        # of a try/except each observer has to remember.
-        bus.subscribe(AuditSubscriber(self._audit))
-        for plugin in self._plugins:
-            bus.subscribe(plugin)
+        bus = self.event_bus()
         return Pipeline(
             runnable=self.name,
             kind=self.kind,
