@@ -465,6 +465,19 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
     def provider(self) -> str | None:
         return self.llm.model
 
+    def _new_usage(self) -> RunContext:
+        """The run's single usage accumulator, published for `complete()` to fill.
+
+        `Pipeline` calls this once per run and keeps the object, so it must be the SAME
+        one every LLM call accrues into — otherwise the run's cost and tokens reach
+        `RunCompleted` as zeros, and the audit ledger records a free run. The cumulative
+        `budget_usd` breaker sums that ledger, so a second accumulator does not merely
+        lose a metric: it disables a governance control.
+        """
+        ctx = RunContext()
+        self._active_ctx = ctx
+        return ctx
+
     def _build_pipeline(self) -> Pipeline[InputT, OutputT]:
         """Compose the standard middleware chain around this agent's instrumented run.
 
@@ -481,7 +494,7 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
             hasher=hash_model_str,
             middleware=build_chain(self, self._disabled_modules),  # type: ignore[arg-type]
             bus=bus,
-            usage_factory=lambda: self._active_ctx or RunContext(),
+            usage_factory=self._new_usage,
         )
 
     def run(self, data: InputT) -> OutputT:
@@ -491,7 +504,12 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
         whose order is declared in `runtime.middleware.Order`. Behaviour is unchanged —
         see that module's docstring for the two deliberate, unobservable deviations.
         """
-        return self._build_pipeline().execute(data)
+        try:
+            return self._build_pipeline().execute(data)
+        finally:
+            # The accumulator is published before the chain runs, so a gate that aborts
+            # ahead of `_execute` would otherwise leave it dangling past the run.
+            self._active_ctx = None
 
     def run_stream(self, data: InputT) -> Generator[str, None, None]:
         """Streaming analog of run(): the SCOPED subset of the same chain.

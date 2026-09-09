@@ -200,6 +200,29 @@ modules:
 dangerous kind of nothing) and warns loudly when a **fail-closed** module —
 `security_input`, `security_output`, `policy`, `capability` — is disabled.
 
+### What a run costs
+
+Every run writes what it spent to an immutable audit ledger, and the ledger is what the
+spend caps read:
+
+```yaml
+budget_usd: 25.00      # cumulative across ALL runs of this agent — sums the ledger
+max_run_usd: 0.50      # one run's ceiling, held as an atomic reservation (TOCTOU-safe)
+max_run_tokens: 40000  # one run's token ceiling
+max_turns: 12          # runaway-loop guard
+```
+
+```bash
+lottie audit --agent digest    # per-run tokens, cost, status, root flag
+```
+
+The two scopes fail differently on purpose. `max_run_usd` reserves *before* the call, so it
+refuses a run that would cross the line. `budget_usd` accrues *after*, so the run that
+crosses the budget completes and the **next** one is refused — a one-run overshoot under
+sequential execution, which is the documented trade for not having to predict a call's cost.
+
+A blocked run never reaches the provider, and the block is recorded as `budget_exceeded`.
+
 ### Long runs: context compaction
 
 ```yaml
