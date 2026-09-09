@@ -109,7 +109,7 @@ plugins:
 ```
 
 ```python
-from lottie.plugins import RunCompleted, RunEvent
+from lottie.plugins import ProviderFallback, RunCompleted, RunEvent
 
 class DatadogSubscriber:
     name = "datadog"
@@ -117,6 +117,8 @@ class DatadogSubscriber:
     def on_event(self, event: RunEvent) -> None:
         if isinstance(event, RunCompleted):
             statsd.timing("lottie.run", event.latency_ms)
+        elif isinstance(event, ProviderFallback):
+            statsd.increment("lottie.fallback", tags=[f"to:{event.fallback_model}"])
 ```
 
 **A plugin cannot intercept a run and cannot read your content.** Events carry scalars and
@@ -168,6 +170,10 @@ It deliberately does **not** fall back on a content-policy refusal. Shopping a r
 request to a second model would launder a provider's safety decision through a framework
 that advertises fail-closed gates. Bad requests and auth errors also fail fast: they fail
 identically on the fallback, so retrying only doubles the spend.
+
+A fallback leaves **three** traces: a warning when it happens, a `ProviderFallback`
+event on the bus (so a telemetry plugin can alert on it), and the audit record naming
+the model that actually served.
 
 With no `fallback` configured, nothing is wrapped and nothing changes.
 

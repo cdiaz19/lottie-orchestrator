@@ -9,7 +9,7 @@ plugins:
 ```
 
 ```python
-from lottie.plugins import RunCompleted, RunEvent
+from lottie.plugins import ProviderFallback, RunCompleted, RunEvent
 
 class DatadogSubscriber:
     name = "datadog"
@@ -32,6 +32,7 @@ third-party code.
 
 from lottie.plugins.loader import PluginLoadError, load_plugin, load_plugins
 from lottie.runtime.events import (
+    ProviderFallback,
     RunBlocked,
     RunCompleted,
     RunEvent,
@@ -42,6 +43,7 @@ from lottie.runtime.events import (
 
 __all__ = [
     "PluginLoadError",
+    "ProviderFallback",
     "RunBlocked",
     "RunCompleted",
     "RunEvent",

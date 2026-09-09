@@ -77,6 +77,20 @@ class RunBlocked(RunEvent):
     error: str
 
 
+class ProviderFallback(RunEvent):
+    """The primary provider failed transiently and the chain advanced (E5).
+
+    Scalars only, like every event: model ids and a reason string that names the
+    exception type, never its payload. A fallback changes what a run cost and which
+    model answered, so it is exactly the kind of thing a telemetry plugin should be
+    able to alert on.
+    """
+
+    failed_model: str
+    fallback_model: str
+    reason: str
+
+
 @runtime_checkable
 class Subscriber(Protocol):
     """A fail-open observer. Raising is tolerated and warned, never propagated.

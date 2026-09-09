@@ -23,9 +23,11 @@ from lottie.governance.capability import build_capability_gate
 from lottie.governance.cost import build_cost_gate
 from lottie.governance.policy import build_policy_gate
 from lottie.llm import LLMProvider, build_provider
+from lottie.llm.routing import RoutedProvider
 from lottie.memory.store import build_memory_client
 from lottie.plugins.loader import load_plugins
 from lottie.project.config import AgentConfig, load_agent_config, load_lottie_config
+from lottie.runtime.events import ProviderFallback
 
 
 class UnitInfo(BaseModel):
@@ -278,6 +280,11 @@ def instantiate_agent(
             max_context_tokens=config.harness.compaction.max_context_tokens,
             keep_recent=config.harness.compaction.keep_recent,
         )
+    # E5 follow-up: a fallback is now announced on the event bus, not just warned.
+    # The provider is built BEFORE the agent, so its notifier is re-pointed here — the
+    # first moment both exist. That was the deviation E5 shipped with; E7 made it worth
+    # closing, since a telemetry plugin should be able to alert on a fallback.
+    _wire_fallback_events(agent, llm)
     # E7: third-party observers, named explicitly. A load failure raises here rather
     # than being skipped — a plugin that silently fails to load would leave an operator
     # believing their exporter is running.
@@ -344,3 +351,37 @@ def _warn_fallback(failed: str, nxt: str, exc: BaseException) -> None:
         f"provider {failed!r} failed transiently; falling back to {nxt!r}: {exc}",
         stacklevel=2,
     )
+
+
+def _wire_fallback_events(
+    agent: BaseAgent[BaseModel, BaseModel], llm: LLMProvider
+) -> None:
+    """Route a RoutedProvider's fallback notifications onto the agent's event bus.
+
+    Best-effort and silent when the provider is not routed: a project with no fallback
+    configured has nothing to announce, and should pay nothing for the feature.
+
+    The default `_warn_fallback` notifier stays in place underneath — a fallback leaves a
+    warning AND an event AND an audit record naming the model that actually served. A
+    silent fallback is the dangerous kind.
+    """
+    if not isinstance(llm, RoutedProvider):
+        return
+
+    def _emit(failed: str, nxt: str, exc: BaseException) -> None:
+        _warn_fallback(failed, nxt, exc)
+        agent.event_bus().emit(
+            ProviderFallback(
+                run_id="",  # a fallback happens inside a run, but the provider has no id
+                runnable=agent.name,
+                kind=agent.kind,
+                provider=failed,
+                # The exception TYPE, never its message: an error string can carry a
+                # prompt fragment or a key, and events are hash-and-scalar only.
+                reason=type(exc).__name__,
+                failed_model=failed,
+                fallback_model=nxt,
+            )
+        )
+
+    llm._on_fallback = _emit  # noqa: SLF001 - the seam exists for exactly this
