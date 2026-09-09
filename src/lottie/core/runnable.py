@@ -53,7 +53,11 @@ class InstrumentedRunnable[InputT: BaseModel, OutputT: BaseModel](ABC):
         return None
 
     def run(self, data: InputT) -> OutputT:
-        ctx = RunContext()
+        # ADOPT a context the caller already published rather than starting a second one.
+        # `Pipeline` builds the run's accumulator up front (via `usage_factory`) and reads
+        # it back when it emits `RunCompleted`; creating a fresh one here would leave that
+        # object at zero, and the audit ledger it feeds with it.
+        ctx = self._active_ctx or RunContext()
         self._active_ctx = ctx
         start = perf_counter()
         success = True
