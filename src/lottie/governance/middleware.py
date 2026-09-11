@@ -77,9 +77,12 @@ class CostMiddleware:
         try:
             return nxt(ctx)
         finally:
-            # Settles AFTER audit (order 38 posts first): during that window both the
-            # reservation and the committed cost count, which over-counts — the safe
-            # direction for a budget gate.
+            # Settles AFTER the run's cost is recorded. Audit is no longer a middleware
+            # (V3 S4 made it a subscriber), so the ordering comes from WHERE the pipeline
+            # emits: `Pipeline._core_frame` fires `RunCompleted` from the innermost frame,
+            # before any post-phase. During the window between that write and this settle,
+            # both the reservation and the committed cost count — an over-count, which is
+            # the safe direction for a budget gate.
             self._gate.settle(handle)
 
     @contextmanager
