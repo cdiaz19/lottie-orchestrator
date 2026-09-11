@@ -10,6 +10,7 @@ from typing import Protocol
 from pydantic import BaseModel, ValidationError
 
 from lottie.core import BaseAgent
+from lottie.core.metrics import RunMetrics
 from lottie.llm import build_provider
 from lottie.project.config import AgentConfig, load_agent_config
 from lottie.project.discovery import (
@@ -232,30 +233,36 @@ class AgentService:
             m = agent.last_metrics
             raise OutputSecurityViolation(
                 str(exc),
-                input_tokens=getattr(m, "input_tokens", 0),
-                output_tokens=getattr(m, "output_tokens", 0),
+                input_tokens=m.input_tokens if m is not None else 0,
+                output_tokens=m.output_tokens if m is not None else 0,
             ) from exc
 
     def _result(
         self,
         name: str,
         output: BaseModel,
-        m: object,
+        m: RunMetrics | None,
     ) -> RunResult:
         """Map an agent output + last metrics into a RunResult.
 
-        status/thread_id/pending are duck-typed off the output — only mesh
-        outputs carry them; plain agents fall back to the defaults.
+        `m` is typed rather than read through `getattr(..., 0)`. Defaulting each metric
+        individually meant a renamed field on `RunMetrics` would report a plausible zero
+        forever, with `mypy --strict` unable to object because `object` has no attributes
+        to check. A missing metrics record is a real state (an unrun agent), so it gets
+        ONE explicit branch instead of six silent defaults.
+
+        status/thread_id/pending stay duck-typed off the output — only mesh outputs carry
+        them, and a plain agent legitimately has none.
         """
         pending_obj = getattr(output, "pending", None)
         pending = pending_obj.model_dump() if pending_obj is not None else None
         return RunResult(
             agent=name,
             output=output.model_dump(),
-            latency_ms=getattr(m, "latency_ms", 0.0),
-            input_tokens=getattr(m, "input_tokens", 0),
-            output_tokens=getattr(m, "output_tokens", 0),
-            cost_usd=getattr(m, "cost_usd", 0.0),
+            latency_ms=m.latency_ms if m is not None else 0.0,
+            input_tokens=m.input_tokens if m is not None else 0,
+            output_tokens=m.output_tokens if m is not None else 0,
+            cost_usd=m.cost_usd if m is not None else 0.0,
             status=getattr(output, "status", "complete"),
             thread_id=getattr(output, "thread_id", None),
             pending=pending,
