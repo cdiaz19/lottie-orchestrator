@@ -221,6 +221,21 @@ class BaseAgent[InputT: BaseModel, OutputT: BaseModel](InstrumentedRunnable[Inpu
             self._bus = bus
         return self._bus
 
+    def set_audit(self, logger: AuditLogger) -> None:
+        """Re-root the audit ledger (called by instantiate_agent).
+
+        The cost gate READS the ledger under the project root while an agent constructed
+        without a `benchmarks_root` WRITES under the cwd. Whenever those differ — any CLI
+        command run from a subdirectory, since `find_project_root` walks up — the gate
+        polls an empty ledger and `budget_usd` silently stops enforcing. Pointing both at
+        the same root removes the split by construction instead of documenting it.
+
+        Resets the bus so the change is order-independent: a bus already built would still
+        hold a subscriber writing to the old ledger.
+        """
+        self._audit = logger
+        self._bus = None
+
     def set_plugins(self, plugins: list[Subscriber]) -> None:
         """Mount third-party observers (E7, via instantiate_agent).
 

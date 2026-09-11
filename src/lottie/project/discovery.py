@@ -19,6 +19,7 @@ import typer
 from pydantic import BaseModel
 
 from lottie.core import BaseAgent, SecurityGateProtocol
+from lottie.governance.audit import build_audit_logger
 from lottie.governance.capability import build_capability_gate
 from lottie.governance.cost import build_cost_gate
 from lottie.governance.policy import build_policy_gate
@@ -220,10 +221,12 @@ def instantiate_agent(
     agent.set_policy(
         build_policy_gate(root, policies=config.policies, capabilities=config.capabilities)
     )
-    # Budget reads the audit ledger under `root`; the agent's audit writes under its
-    # benchmarks_root (default cwd). Both resolve to the project root for `lottie run`
-    # and `serve` (cwd == root). A caller that instantiates with root != cwd would split
-    # the ledger — out of scope (no shipped call site does this).
+    # The cost gate READS the ledger under `root`, so the agent must WRITE there too.
+    # An agent constructed without a `benchmarks_root` defaults to the cwd, and
+    # `find_project_root` walks UP — so any command run from a subdirectory split the
+    # ledger and left `budget_usd` polling an empty one. Re-rooting here makes the two
+    # halves agree by construction rather than by assumption about the caller's cwd.
+    agent.set_audit(build_audit_logger(root))
     agent.set_cost_gate(
         build_cost_gate(
             root,

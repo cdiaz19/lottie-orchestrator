@@ -2,7 +2,7 @@
 
 `RunCompleted` fires from the INNERMOST frame, so a subscriber (audit) observes the run
 before any middleware post-phase (cost settle). Today that ordering is hand-maintained in
-`BaseAgent.run`'s nested finally blocks and documented at `core/base_agent.py:461-466`.
+`BaseAgent.run`'s nested finally blocks and relied on by `governance.middleware.CostMiddleware`.
 """
 
 from __future__ import annotations

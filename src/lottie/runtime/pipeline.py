@@ -236,7 +236,7 @@ class Pipeline[InputT: BaseModel, OutputT: BaseModel]:
         Emitting here rather than from `execute` is load-bearing. It means observers see
         the completed run BEFORE any middleware post-phase, so an audit subscriber
         records the real cost before the cost middleware's `finally` settles the
-        reservation — the invariant documented at `core/base_agent.py:461-466`.
+        reservation — the invariant `governance.middleware.CostMiddleware` relies on.
         """
         input_hash = self._checked_hash(ctx.input)
         self._bus.emit(
